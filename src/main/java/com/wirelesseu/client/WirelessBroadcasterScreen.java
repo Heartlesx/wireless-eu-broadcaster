@@ -73,16 +73,6 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 .bounds(leftPos + 128, topPos + 75, 112, 18)
                 .build());
 
-        int buttonX = leftPos + 100;
-        for (int amperage : WirelessEuBroadcasterMachine.OUTPUT_AMPERAGE_OPTIONS) {
-            addRenderableWidget(Button.builder(Component.literal(amperage + "A"), button ->
-                            WirelessEuNetwork.sendAction(menu.getPos(),
-                                    WirelessEuNetwork.ServerAction.SET_OUTPUT_AMPERAGE, amperage, List.of()))
-                    .bounds(buttonX, topPos + 29, 42, 18)
-                    .build());
-            buttonX += 44;
-        }
-
         connectButton = addRenderableWidget(Button.builder(Component.translatable("gui.wireless_eu.connect"), button ->
                         WirelessEuNetwork.sendAction(menu.getPos(),
                                 WirelessEuNetwork.ServerAction.CONNECT_SELECTED, 0, selectedPositions))
@@ -136,8 +126,6 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
 
         graphics.drawString(font, title, leftPos + 10, topPos + 11, 0xFFFFFF, false);
         graphics.drawString(font, Component.translatable("gui.wireless_eu.targets"), leftPos + 263, topPos + 20,
-                0xB8D6FF, false);
-        graphics.drawString(font, Component.translatable("gui.wireless_eu.output_amperage"), leftPos + 100, topPos + 20,
                 0xB8D6FF, false);
         drawTargets(graphics, state, mouseX, mouseY);
         drawMachineInfo(graphics, state);

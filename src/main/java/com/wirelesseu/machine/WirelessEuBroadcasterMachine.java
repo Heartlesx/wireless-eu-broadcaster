@@ -50,7 +50,7 @@ import java.util.Objects;
 
 public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine implements IUIMachine {
     public static final int RANGE = 384;
-    public static final int[] OUTPUT_AMPERAGE_OPTIONS = {4, 8, 12, 16, 64, 256};
+    public static final int DEFAULT_OUTPUT_AMPERAGE = 65_536;
     // 256A at the machine voltage for 15 minutes: 256 * 20 ticks/s * 900 s.
     private static final long BUFFER_VOLTAGE_MULTIPLIER = 4_608_000L;
     private static final long INPUT_AMPERAGE_LIMIT = 256L;
@@ -61,7 +61,7 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
 
     private final Map<Long, WirelessTarget> connections = new LinkedHashMap<>();
     private List<WirelessTarget> scanResults = List.of();
-    private int configuredOutputAmperage = OUTPUT_AMPERAGE_OPTIONS[0];
+    private int configuredOutputAmperage = DEFAULT_OUTPUT_AMPERAGE;
     private int roundRobinIndex;
     private long pendingAmplifiedInput;
     private long inputPerSecond;
@@ -138,9 +138,7 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
     @Override
     public void loadCustomPersistedData(CompoundTag tag) {
         super.loadCustomPersistedData(tag);
-        configuredOutputAmperage = isOutputAmperageOption(tag.getInt("ConfiguredOutputAmperage"))
-                ? tag.getInt("ConfiguredOutputAmperage")
-                : OUTPUT_AMPERAGE_OPTIONS[0];
+        configuredOutputAmperage = DEFAULT_OUTPUT_AMPERAGE;
         roundRobinIndex = Math.max(0, tag.getInt("RoundRobinIndex"));
         connections.clear();
         ListTag connectionTags = tag.getList("WirelessConnections", Tag.TAG_COMPOUND);
@@ -165,10 +163,7 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         switch (action) {
             case SCAN -> scanTargets();
             case SET_OUTPUT_AMPERAGE -> {
-                if (isOutputAmperageOption(requestedAmperage)) {
-                    configuredOutputAmperage = requestedAmperage;
-                    markDirty();
-                }
+                configuredOutputAmperage = DEFAULT_OUTPUT_AMPERAGE;
             }
             case CONNECT_SELECTED -> {
                 if (!selectedPositions.isEmpty()) {
@@ -386,9 +381,7 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         }
         long outputLimitEuPerTick = saturatingMultiply(configuredOutputAmperage, getVoltage());
         if (getConnectedLoadEuPerTick() > outputLimitEuPerTick - newLoadEuPerTick) {
-            return configuredOutputAmperage == OUTPUT_AMPERAGE_OPTIONS[OUTPUT_AMPERAGE_OPTIONS.length - 1]
-                    ? WirelessEuNetwork.ConnectionRejection.OUTPUT_FULL
-                    : WirelessEuNetwork.ConnectionRejection.INCREASE_OUTPUT_LIMIT;
+            return WirelessEuNetwork.ConnectionRejection.OUTPUT_FULL;
         }
 
         for (WirelessTarget target : newConnections) {
@@ -540,15 +533,6 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         return Math.abs(pos.getX() - origin.getX()) <= RANGE
                 && Math.abs(pos.getY() - origin.getY()) <= RANGE
                 && Math.abs(pos.getZ() - origin.getZ()) <= RANGE;
-    }
-
-    private static boolean isOutputAmperageOption(int amperage) {
-        for (int option : OUTPUT_AMPERAGE_OPTIONS) {
-            if (option == amperage) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static long saturatingAdd(long left, long right) {
