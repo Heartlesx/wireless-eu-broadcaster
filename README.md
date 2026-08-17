@@ -6,7 +6,7 @@ Wireless EU Broadcaster is a Minecraft 1.20.1 Forge mod for GTCEu. It adds tiere
 
 - Minecraft `1.20.1`
 - Forge `47.4.13` or newer 1.20.1 Forge builds
-- GTCEu `7.5.3` or newer compatible builds (required)
+- Currently only supports the Monifactory modpack.
 - Jade `11.13.2` or newer (optional integration)
 - Java 17
 
