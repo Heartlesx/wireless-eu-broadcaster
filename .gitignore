@@ -1,0 +1,11 @@
+.gradle/
+.idea/
+*.iml
+out/
+run/
+run-server/
+Forge/build/
+work/
+outputs/
+*.log
+

@@ -1,0 +1,99 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = 'Wireless-EU-Broadcaster'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+sourceSets {
+    main {
+        java.setSrcDirs(['../src/main/java'])
+        resources.setSrcDirs(['../src/main/resources'])
+    }
+}
+
+minecraft {
+    mappings channel: 'official', version: minecraft_version
+    copyIdeResources = true
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                wireless_eu {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run-server')
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                wireless_eu {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    def packMods = 'G:/MC/PCL/.minecraft/versions/Monifactory/mods'
+    def extracted = '../work/dependency-extract/META-INF/jarjar'
+
+    compileOnly fg.deobf(files("${packMods}/gtceu-1.20.1-7.5.3.jar"))
+    compileOnly fg.deobf(files("${packMods}/Jade-1.20.1-Forge-11.13.2.jar"))
+    compileOnly files("${extracted}/ldlib-forge-1.20.1-1.0.40.b.jar")
+    compileOnly files("${extracted}/Registrate-MC1.20-1.3.11.jar")
+
+    runtimeOnly fg.deobf(files("${packMods}/gtceu-1.20.1-7.5.3.jar"))
+    runtimeOnly fg.deobf(files("${packMods}/Jade-1.20.1-Forge-11.13.2.jar"))
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    def replaceProperties = [
+            minecraft_version: minecraft_version,
+            forge_version: forge_version,
+            mod_id: mod_id,
+            mod_name: mod_name,
+            mod_license: mod_license,
+            mod_version: mod_version,
+            mod_authors: mod_authors,
+            mod_description: mod_description
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title': mod_id,
+                'Specification-Vendor': mod_authors,
+                'Specification-Version': '1',
+                'Implementation-Title': project.name,
+                'Implementation-Version': project.jar.archiveVersion,
+                'Implementation-Vendor': mod_authors
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
