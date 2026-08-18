@@ -34,7 +34,17 @@
   "gui.wireless_eu.locate": "定位",
   "gui.wireless_eu.filter_unconnected": "查看未连接",
   "gui.wireless_eu.filter_connected": "查看已连接",
+  "gui.wireless_eu.migrate": "迁移到高等级广播器",
+  "gui.wireless_eu.migration_targets": "选择迁移目标",
+  "gui.wireless_eu.migration_confirm": "是否确认迁移？",
+  "gui.wireless_eu.confirm": "确认",
+  "gui.wireless_eu.cancel": "取消",
   "chat.wireless_eu.target_location": "目标位置：",
   "chat.wireless_eu.target_location_hover": "点击传送到该机器",
-  "chat.wireless_eu.target_not_found": "该位置没有有效的机器"
+  "chat.wireless_eu.target_not_found": "该位置没有有效的机器",
+  "chat.wireless_eu.migration_not_found": "范围内没有可用的更高等级广播器",
+  "chat.wireless_eu.migration_capacity": "目标广播器缓存空间不足，迁移已取消",
+  "chat.wireless_eu.migration_success": "已将连接机器和 EU 缓存迁移到更高等级广播器"
+  ,"chat.wireless_eu.broadcaster_location": "广播器位置："
+  ,"chat.wireless_eu.broadcaster_location_hover": "点击传送到该广播器"
 }

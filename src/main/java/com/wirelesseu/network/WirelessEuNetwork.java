@@ -22,7 +22,8 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 public final class WirelessEuNetwork {
-    private static final String PROTOCOL_VERSION = "5";
+    public record HigherBroadcasterInfo(BlockPos pos, int tier, long distanceSquared) {}
+    private static final String PROTOCOL_VERSION = "7";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(WirelessEuMod.MOD_ID, "main"),
             () -> PROTOCOL_VERSION,
@@ -60,7 +61,8 @@ public final class WirelessEuNetwork {
                 broadcaster.getDepletionTimeSeconds(),
                 broadcaster.getConnectedLoadEuPerTick(),
                 broadcaster.getScanResults(),
-                broadcaster.getConnections());
+                broadcaster.getConnections(),
+                broadcaster.getHigherBroadcasters());
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
     }
 
@@ -73,7 +75,9 @@ public final class WirelessEuNetwork {
         SET_OUTPUT_AMPERAGE,
         CONNECT_SELECTED,
         DISCONNECT_SELECTED,
-        LOCATE_TARGET
+        LOCATE_TARGET,
+        MIGRATE_TO_HIGHER,
+        LOCATE_BROADCASTER
     }
 
     public enum ConnectionRejection {
@@ -127,7 +131,8 @@ public final class WirelessEuNetwork {
     private record StatePacket(BlockPos pos, boolean canConfigure, int outputAmperage, long storedEu, long capacityEu,
                                long voltage, long inputEuPerSecond, long fillTimeSeconds, long depletionTimeSeconds,
                                long connectedLoadEuPerTick,
-                               List<WirelessTarget> scanResults, List<WirelessTarget> connections) {
+                               List<WirelessTarget> scanResults, List<WirelessTarget> connections,
+                               List<HigherBroadcasterInfo> higherBroadcasters) {
         private static void encode(StatePacket packet, FriendlyByteBuf buffer) {
             buffer.writeBlockPos(packet.pos);
             buffer.writeBoolean(packet.canConfigure);
@@ -141,6 +146,12 @@ public final class WirelessEuNetwork {
             buffer.writeLong(packet.connectedLoadEuPerTick);
             writeTargets(buffer, packet.scanResults);
             writeTargets(buffer, packet.connections);
+            buffer.writeVarInt(packet.higherBroadcasters.size());
+            for (HigherBroadcasterInfo info : packet.higherBroadcasters) {
+                buffer.writeBlockPos(info.pos());
+                buffer.writeVarInt(info.tier());
+                buffer.writeLong(info.distanceSquared());
+            }
         }
 
         private static StatePacket decode(FriendlyByteBuf buffer) {
@@ -155,7 +166,8 @@ public final class WirelessEuNetwork {
             long depletionTimeSeconds = buffer.readLong();
             long connectedLoadEuPerTick = buffer.readLong();
             return new StatePacket(pos, canConfigure, outputAmperage, storedEu, capacityEu, voltage, inputEuPerSecond,
-                    fillTimeSeconds, depletionTimeSeconds, connectedLoadEuPerTick, readTargets(buffer), readTargets(buffer));
+                    fillTimeSeconds, depletionTimeSeconds, connectedLoadEuPerTick, readTargets(buffer), readTargets(buffer),
+                    readHigherBroadcasters(buffer));
         }
 
         private static void handle(StatePacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -169,9 +181,18 @@ public final class WirelessEuNetwork {
                         packet.outputAmperage, packet.storedEu, packet.capacityEu, packet.voltage, packet.inputEuPerSecond,
                         packet.fillTimeSeconds, packet.depletionTimeSeconds, packet.connectedLoadEuPerTick,
                         List.copyOf(packet.scanResults),
-                        Set.copyOf(connectedPositions)));
+                        Set.copyOf(connectedPositions), List.copyOf(packet.higherBroadcasters)));
             });
             context.setPacketHandled(true);
+        }
+
+        private static List<HigherBroadcasterInfo> readHigherBroadcasters(FriendlyByteBuf buffer) {
+            int count = Math.min(64, buffer.readVarInt());
+            List<HigherBroadcasterInfo> result = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                result.add(new HigherBroadcasterInfo(buffer.readBlockPos(), buffer.readVarInt(), buffer.readLong()));
+            }
+            return result;
         }
 
         private static void writeTargets(FriendlyByteBuf buffer, List<WirelessTarget> targets) {

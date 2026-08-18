@@ -35,9 +35,10 @@ public final class ClientBroadcasterState {
     public record State(BlockPos pos, boolean canConfigure, int outputAmperage, long storedEu, long capacityEu,
                         long voltage, long inputEuPerSecond, long fillTimeSeconds, long depletionTimeSeconds,
                         long connectedLoadEuPerTick,
-                        List<WirelessTarget> scanResults, Set<Long> connectedPositions) {
+                        List<WirelessTarget> scanResults, Set<Long> connectedPositions,
+                        List<WirelessEuNetwork.HigherBroadcasterInfo> higherBroadcasters) {
         public static final State EMPTY = new State(BlockPos.ZERO, false, 4, 0L, 0L, 0L, 0L, -1L, 0L, 0L,
-                List.of(), Set.of());
+                List.of(), Set.of(), List.of());
 
         public boolean isConnected(WirelessTarget target) {
             return connectedPositions.contains(target.pos().asLong());

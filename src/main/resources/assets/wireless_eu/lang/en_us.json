@@ -34,7 +34,17 @@
   "gui.wireless_eu.locate": "Locate",
   "gui.wireless_eu.filter_unconnected": "Show unconnected",
   "gui.wireless_eu.filter_connected": "Show connected",
+  "gui.wireless_eu.migrate": "Migrate to higher tier",
+  "gui.wireless_eu.migration_targets": "Choose migration target",
+  "gui.wireless_eu.migration_confirm": "Confirm migration?",
+  "gui.wireless_eu.confirm": "Confirm",
+  "gui.wireless_eu.cancel": "Cancel",
   "chat.wireless_eu.target_location": "Target location: ",
   "chat.wireless_eu.target_location_hover": "Click to teleport to this target",
-  "chat.wireless_eu.target_not_found": "No valid machine exists at that location"
+  "chat.wireless_eu.target_not_found": "No valid machine exists at that location",
+  "chat.wireless_eu.migration_not_found": "No higher-tier broadcaster is available in range",
+  "chat.wireless_eu.migration_capacity": "The destination broadcaster does not have enough buffer space",
+  "chat.wireless_eu.migration_success": "Connections and EU buffer migrated to the higher-tier broadcaster"
+  ,"chat.wireless_eu.broadcaster_location": "Broadcaster location: "
+  ,"chat.wireless_eu.broadcaster_location_hover": "Click to teleport to this broadcaster"
 }
