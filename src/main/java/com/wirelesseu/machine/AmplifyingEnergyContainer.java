@@ -14,7 +14,7 @@ final class AmplifyingEnergyContainer extends NotifiableEnergyContainer {
 
     @Override
     public long acceptEnergyFromNetwork(Direction side, long voltage, long amperage) {
-        if (voltage <= 0 || amperage <= 0) {
+        if (voltage <= 0 || amperage <= 0 || broadcaster.isBatteryBufferInputBlocked(side)) {
             return 0;
         }
 

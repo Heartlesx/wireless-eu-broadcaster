@@ -12,6 +12,11 @@ import com.gregtechceu.gtceu.api.machine.feature.ITieredMachine;
 import com.gregtechceu.gtceu.api.machine.feature.IUIMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableEnergyContainer;
+import com.gregtechceu.gtceu.common.blockentity.CableBlockEntity;
+import com.gregtechceu.gtceu.common.machine.electric.BatteryBufferMachine;
+import com.gregtechceu.gtceu.common.pipelike.cable.EnergyNet;
+import com.gregtechceu.gtceu.common.pipelike.cable.EnergyRoutePath;
+import com.gregtechceu.gtceu.common.pipelike.cable.LevelEnergyNet;
 import com.wirelesseu.command.WirelessEuCommands;
 import com.wirelesseu.menu.WirelessBroadcasterMenu;
 import com.wirelesseu.network.WirelessEuNetwork;
@@ -42,6 +47,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -69,6 +75,8 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
     private long lastEnergySample = -1L;
     private boolean bufferIncreasing;
     private TickableSubscription broadcasterSubscription;
+    private long inputFirewallSampleTick = Long.MIN_VALUE;
+    private final EnumMap<Direction, Boolean> inputFirewallCache = new EnumMap<>(Direction.class);
 
     public WirelessEuBroadcasterMachine(IMachineBlockEntity holder, int tier) {
         super(holder, tier);
@@ -305,6 +313,74 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
 
     void recordAmplifiedInput(long acceptedEnergy) {
         pendingAmplifiedInput += acceptedEnergy;
+    }
+
+    /**
+     * Battery buffers are valid wireless output targets, but their stored EU must not be
+     * allowed to come back through the GT energy network and get amplified again.
+     *
+     * GTCEu does not pass the original producer to IEnergyContainer#acceptEnergyFromNetwork.
+     * The input side therefore identifies the adjacent cable network and rejects input from
+     * any active battery-buffer output on that network. This leaves the broadcaster's wireless
+     * output path unchanged while closing the duplication loop.
+     */
+    boolean isBatteryBufferInputBlocked(Direction side) {
+        if (side == null || getLevel() == null || getLevel().isClientSide) {
+            return false;
+        }
+
+        long tick = getOffsetTimer();
+        if (tick != inputFirewallSampleTick) {
+            inputFirewallSampleTick = tick;
+            inputFirewallCache.clear();
+        }
+        return inputFirewallCache.computeIfAbsent(side, this::findBatteryBufferOutput);
+    }
+
+    private boolean findBatteryBufferOutput(Direction broadcasterSide) {
+        Level level = getLevel();
+        BlockPos adjacentPos = getPos().relative(broadcasterSide);
+        MetaMachine adjacentMachine = MetaMachine.getMachine(level, adjacentPos);
+        if (adjacentMachine instanceof BatteryBufferMachine batteryBuffer) {
+            Direction batteryOutputSide = broadcasterSide.getOpposite();
+            return batteryBuffer.getFrontFacing() == batteryOutputSide
+                    && batteryBuffer.energyContainer.outputsEnergy(batteryOutputSide);
+        }
+
+        if (!(level instanceof ServerLevel serverLevel)
+                || !(level.getBlockEntity(adjacentPos) instanceof CableBlockEntity)) {
+            return false;
+        }
+
+        EnergyNet energyNet = LevelEnergyNet.getOrCreate(serverLevel).getNetFromPos(adjacentPos);
+        if (energyNet == null) {
+            return false;
+        }
+        List<EnergyRoutePath> routes = energyNet.getNetData(adjacentPos);
+        if (routes == null) {
+            return false;
+        }
+        for (EnergyRoutePath route : routes) {
+            BlockPos pipePos = route.getTargetPipePos();
+            Direction routeFacing = route.getTargetFacing();
+            if (isBatteryBufferOutputAt(serverLevel, pipePos.relative(routeFacing), routeFacing.getOpposite())
+                    || isBatteryBufferOutputAt(serverLevel, pipePos.relative(routeFacing.getOpposite()), routeFacing)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isBatteryBufferOutputAt(ServerLevel level, BlockPos position, Direction outputSide) {
+        if (!isLoaded(position)) {
+            return false;
+        }
+        MetaMachine machine = MetaMachine.getMachine(level, position);
+        if (!(machine instanceof BatteryBufferMachine batteryBuffer)) {
+            return false;
+        }
+        return batteryBuffer.getFrontFacing() == outputSide
+                && batteryBuffer.energyContainer.outputsEnergy(outputSide);
     }
 
     private void tickBroadcaster() {
@@ -633,8 +709,10 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         if (sourceVoltage <= 0L || euPerTick <= 0L) {
             return "0A";
         }
-        return BigDecimal.valueOf(euPerTick).divide(BigDecimal.valueOf(sourceVoltage)).stripTrailingZeros()
-                .toPlainString() + "A";
+        String amperage = BigDecimal.valueOf(euPerTick)
+                .divide(BigDecimal.valueOf(sourceVoltage), 2, RoundingMode.HALF_UP)
+                .stripTrailingZeros().toPlainString();
+        return amperage + "A";
     }
 
     public static String formatInputEquivalent(long euPerTick) {

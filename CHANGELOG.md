@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.5
+
+- Increased the scanned-machine list from 9 to 11 visible rows to use the full panel height.
+- Aligned list drawing and click hitboxes for the additional rows.
+
+## 1.2.4
+
+- Removed the offset terminal drop shadow so the outer black border has consistent thickness on all sides.
+
+## 1.2.3
+
+- Rounded displayed connection amperage to two decimal places while preserving exact internal load calculations.
+
+## 1.2.2
+
+- Fixed battery-buffer output direction detection for direct broadcaster connections.
+- Hardened cable-network battery-buffer endpoint detection to block amplified EU feedback.
+
 ## 1.1.7
 
 - Added clickable migration destination coordinates that send a teleport link to chat.
