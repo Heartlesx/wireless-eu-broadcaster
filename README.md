@@ -1,43 +1,79 @@
-# Wireless EU Broadcaster
+Wireless EU Broadcaster 2.0.1
+广播器升级与连接卡操作说明
 
-Wireless EU Broadcaster is a Minecraft 1.20.1 Forge mod for GTCEu. It adds tiered wireless EU broadcaster machines that can transfer energy to configured targets without running long physical cable lines.
+一、广播器升级
 
-## Compatibility
+1. 只有广播器拥有者可以升级。第一次使用时，放置者会成为拥有者。
+2. 准备与广播器等级对应的电路标签：
+   LV  -> gtceu:circuits/lv
+   MV  -> gtceu:circuits/mv
+   HV  -> gtceu:circuits/hv
+   EV  -> gtceu:circuits/ev
+   IV  -> gtceu:circuits/iv
+   LuV -> gtceu:circuits/luv
+   ZPM -> gtceu:circuits/zpm
+   UV  -> gtceu:circuits/uv
+   UHV -> gtceu:circuits/uhv
+   UEV -> gtceu:circuits/uev
+   MAX -> gtceu:circuits/max
+3. 只要电路带有对应等级标签即可使用，不要求固定物品 ID。同等级的不同电路可以混合使用。
+4. 手持电路，对广播器按 Shift + 右键。每次会按当前手持堆叠数量插入，电路不足时可以分多次操作。
+5. 空手对广播器按 Shift + 右键，可以查看还需要多少个电路。
+6. 总计插入 32 个对应等级电路后，聊天栏会提示升级成功，并解锁：
+   - 同维度供电距离不再受 384 格限制；
+   - 可以使用连接卡添加跨维度目标。
+7. 广播器被破坏时，已插入的电路会按实际种类和数量掉落。广播器破坏后，原有跨维度连接失效。
 
-- Minecraft `1.20.1`
-- Forge `47.4.13` or newer 1.20.1 Forge builds
-- Currently only supports the Monifactory modpack.
-- Jade `11.13.2` or newer (optional integration)
-- Java 17
+二、获取连接卡
 
-## Features
+连接卡物品 ID：wireless_eu:link_card
 
-- Tiered Wireless EU Broadcaster machines from LV through MAX.
-- Configurable target selection and transfer behavior.
-- In-game broadcaster screen and range preview.
-- Optional Jade information integration.
-- Client-side nearby-container search and broadcaster status display.
+当前连接卡只能从创造模式获取，没有普通合成配方。
 
-## Installation
+三、绑定连接卡
 
-1. Install Minecraft `1.20.1` with Forge.
-2. Install the required GTCEu version and its dependencies.
-3. Place `Wireless-EU-Broadcaster-1.1.2.jar` in the instance `mods` directory.
-4. Install Jade if you want the optional integration.
+1. 先完成广播器升级。
+2. 手持未绑定的连接卡，对已升级广播器按 Shift + 右键。
+3. 聊天栏提示“链接卡已绑定当前广播器”后，卡片会保存广播器的维度和坐标。
+4. 连接卡配置操作仅限广播器拥有者。
 
-This mod is intended for a GTCEu-based setup. Back up existing worlds before installing a new version.
+四、收集目标
 
-## Building From Source
+1. 带着已绑定的连接卡，前往目标能源设备所在位置。
+2. 对有效目标普通右键，不需要按 Shift。目标会加入卡片的待提交列表。
+3. 可添加的目标包括有效的 GTCEu 能量输入设备、能源仓、激光仓、电池箱和单方块机器等。
+4. 目标等级不能高于绑定的广播器等级。
+5. 同维度 384 格以内的目标应使用广播器界面的“扫描”和“连接所选”，不能用连接卡添加。
+6. 同维度超过 384 格的目标可以使用连接卡添加。
+7. 跨维度目标可以使用连接卡添加，但目标区块必须已经加载。
+8. 每批最多收集 32 个目标；达到 32 个后必须回广播器提交，不能继续添加。
+9. 重复目标会被拒绝。目标无效、等级过高或区块未加载时也会被拒绝。
 
-The Forge subproject is in `Forge/`; source files are shared from `src/main`. Use Java 17 and the Gradle 8.1 distribution or a compatible ForgeGradle setup:
+五、提交目标
 
-```text
-gradle :Forge:build
-```
+1. 回到连接卡绑定的广播器位置。
+2. 手持连接卡，对绑定的广播器普通右键，不要按 Shift。
+3. 提交成功后，待提交目标会写入广播器并从卡片中清空。
+4. 卡片与广播器的绑定关系会保留，可以继续收集下一批目标。
+5. 提交时会再次检查目标、区块加载状态、电压兼容性和广播器总输出容量；检查失败时待提交目标会保留在卡片中。
 
-The release JAR is generated under `Forge/build/libs/`.
+六、清空连接卡
 
-## License
+1. 将一张连接卡单独放入合成栏。
+2. 取出产出的新连接卡。
+3. 新卡会清除原卡的绑定维度、坐标和待提交目标，可重新绑定其他广播器。
 
-Wireless EU Broadcaster is licensed under LGPL-3.0-or-later. See [LICENSE](LICENSE).
+七、供电限制与注意事项
 
+1. 跨维度目标区块未加载时不会送电，广播器不会主动强制加载区块；区块重新加载后会恢复尝试供电。
+2. 所有连接仍受广播器等级、电压兼容和固定 65536A 总输出上限限制。
+3. 迁移到更高等级广播器时，如果源广播器有跨维度连接，目标广播器也必须先完成 32 个同级电路升级。
+4. 更新 Mod 后请彻底退出客户端和服务器再重新启动，并确保客户端和服务端只保留同一个 Wireless EU JAR，避免版本不一致导致交互无效。
+
+八、常见提示
+
+- “只有广播器拥有者可以进行升级”：当前玩家不是该广播器拥有者。
+- “该广播器距离升级还需要 X 个 Y 级电路”：还没有插满 32 个电路。
+- “链接卡已经绑定其他有效广播器”：先把这张卡单独放入合成栏清空，再重新绑定。
+- “链接卡绑定的广播器不存在或所在维度不可用”：原广播器被破坏、维度不可用或区块未加载。
+- “本批链接数量已达到 32 个”：回到绑定广播器提交当前批次。
