@@ -8,6 +8,7 @@ import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.TickableSubscription;
 import com.gregtechceu.gtceu.api.machine.TieredEnergyMachine;
+import com.gregtechceu.gtceu.api.machine.feature.IInteractedMachine;
 import com.gregtechceu.gtceu.api.machine.feature.ITieredMachine;
 import com.gregtechceu.gtceu.api.machine.feature.IUIMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine;
@@ -18,29 +19,38 @@ import com.gregtechceu.gtceu.common.pipelike.cable.EnergyNet;
 import com.gregtechceu.gtceu.common.pipelike.cable.EnergyRoutePath;
 import com.gregtechceu.gtceu.common.pipelike.cable.LevelEnergyNet;
 import com.wirelesseu.command.WirelessEuCommands;
+import com.wirelesseu.item.LinkCardItem;
 import com.wirelesseu.menu.WirelessBroadcasterMenu;
 import com.wirelesseu.network.WirelessEuNetwork;
 import com.lowdragmc.lowdraglib.gui.modular.ModularUI;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraftforge.network.NetworkHooks;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -52,11 +62,13 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Locale;
 
-public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine implements IUIMachine {
+public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine implements IUIMachine, IInteractedMachine {
     public static final int RANGE = 384;
     public static final int DEFAULT_OUTPUT_AMPERAGE = 65_536;
+    public static final int UPGRADE_CIRCUIT_COUNT = 32;
+    public static final int LINK_BATCH_SIZE = 32;
     // 256A at the machine voltage for 15 minutes: 256 * 20 ticks/s * 900 s.
     private static final long BUFFER_VOLTAGE_MULTIPLIER = 4_608_000L;
     private static final long INPUT_AMPERAGE_LIMIT = 256L;
@@ -77,6 +89,9 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
     private TickableSubscription broadcasterSubscription;
     private long inputFirewallSampleTick = Long.MIN_VALUE;
     private final EnumMap<Direction, Boolean> inputFirewallCache = new EnumMap<>(Direction.class);
+    private boolean crossDimensionUnlocked;
+    private final List<ItemStack> upgradeCircuits = new ArrayList<>();
+    private final Map<RemoteTargetKey, WirelessRemoteTarget> remoteConnections = new LinkedHashMap<>();
 
     public WirelessEuBroadcasterMachine(IMachineBlockEntity holder, int tier) {
         super(holder, tier);
@@ -108,6 +123,24 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
 
     @Override
     public InteractionResult tryToOpenUI(Player player, InteractionHand hand, BlockHitResult hitResult) {
+        InteractionResult upgradeResult = handleUpgradeInteraction(player, hand);
+        if (upgradeResult != InteractionResult.PASS) {
+            return upgradeResult;
+        }
+        if (player.isShiftKeyDown() && player.getItemInHand(hand).isEmpty()) {
+            if (player.level().isClientSide) {
+                return InteractionResult.SUCCESS;
+            }
+            if (isCrossDimensionUnlocked()) {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.upgrade_already"));
+            } else if (isOwner(player)) {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.upgrade_remaining",
+                        remainingUpgradeCircuits(), tierName(getTier())));
+            } else {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.upgrade_owner"));
+            }
+            return InteractionResult.CONSUME;
+        }
         if (player.level().isClientSide) {
             return InteractionResult.SUCCESS;
         }
@@ -120,6 +153,25 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
                 Component.translatable(getDefinition().getDescriptionId()));
         NetworkHooks.openScreen(serverPlayer, provider, buffer -> buffer.writeBlockPos(getPos()));
         sendStateTo(serverPlayer);
+        return InteractionResult.CONSUME;
+    }
+
+    @Override
+    public InteractionResult onUse(BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand,
+                                   BlockHitResult hitResult) {
+        return handleUpgradeInteraction(player, hand);
+    }
+
+    private InteractionResult handleUpgradeInteraction(Player player, InteractionHand hand) {
+        if (!player.isShiftKeyDown() || !isUpgradeCircuit(player.getItemInHand(hand))) {
+            return InteractionResult.PASS;
+        }
+        if (player.level().isClientSide) {
+            return InteractionResult.SUCCESS;
+        }
+        if (player instanceof ServerPlayer serverPlayer) {
+            insertUpgradeCircuits(serverPlayer, hand);
+        }
         return InteractionResult.CONSUME;
     }
 
@@ -141,6 +193,26 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
             connectionTags.add(target.save());
         }
         tag.put("WirelessConnections", connectionTags);
+
+        if (forDrop) {
+            tag.remove("CrossDimensionUnlocked");
+            tag.remove("UpgradeCircuits");
+            tag.remove("WirelessRemoteConnections");
+            return;
+        }
+
+        tag.putBoolean("CrossDimensionUnlocked", crossDimensionUnlocked);
+        ListTag circuitTags = new ListTag();
+        for (ItemStack stack : upgradeCircuits) {
+            circuitTags.add(stack.save(new CompoundTag()));
+        }
+        tag.put("UpgradeCircuits", circuitTags);
+
+        ListTag remoteTags = new ListTag();
+        for (WirelessRemoteTarget target : remoteConnections.values()) {
+            remoteTags.add(target.save());
+        }
+        tag.put("WirelessRemoteConnections", remoteTags);
     }
 
     @Override
@@ -154,6 +226,236 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
             WirelessTarget target = WirelessTarget.load((CompoundTag) entry, getTier(), getVoltage());
             connections.put(target.pos().asLong(), target);
         }
+        crossDimensionUnlocked = tag.getBoolean("CrossDimensionUnlocked");
+        upgradeCircuits.clear();
+        ListTag circuitTags = tag.getList("UpgradeCircuits", Tag.TAG_COMPOUND);
+        for (Tag entry : circuitTags) {
+            ItemStack stack = ItemStack.of((CompoundTag) entry);
+            if (!stack.isEmpty() && isUpgradeCircuit(stack)) {
+                upgradeCircuits.add(stack);
+            }
+        }
+        crossDimensionUnlocked = crossDimensionUnlocked || installedCircuitCount() >= UPGRADE_CIRCUIT_COUNT;
+        remoteConnections.clear();
+        ListTag remoteTags = tag.getList("WirelessRemoteConnections", Tag.TAG_COMPOUND);
+        for (Tag entry : remoteTags) {
+            WirelessRemoteTarget target = WirelessRemoteTarget.load((CompoundTag) entry);
+            if (target != null) {
+                remoteConnections.put(new RemoteTargetKey(target.dimension(), target.pos().asLong()), target);
+            }
+        }
+    }
+
+    public boolean isCrossDimensionUnlocked() {
+        return crossDimensionUnlocked;
+    }
+
+    public int remainingUpgradeCircuits() {
+        return crossDimensionUnlocked ? 0 : Math.max(0, UPGRADE_CIRCUIT_COUNT - installedCircuitCount());
+    }
+
+    public boolean insertUpgradeCircuits(ServerPlayer player, InteractionHand hand) {
+        if (!isOwner(player)) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.upgrade_owner"));
+            return false;
+        }
+        if (crossDimensionUnlocked) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.upgrade_already"));
+            return false;
+        }
+        ItemStack held = player.getItemInHand(hand);
+        if (!isUpgradeCircuit(held)) {
+            return false;
+        }
+        int inserted = Math.min(held.getCount(), remainingUpgradeCircuits());
+        ItemStack saved = held.copy();
+        saved.setCount(inserted);
+        addInstalledCircuitStack(saved);
+        held.shrink(inserted);
+        crossDimensionUnlocked = remainingUpgradeCircuits() == 0;
+        markDirty();
+        if (crossDimensionUnlocked) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.upgrade_success", tierName(getTier())));
+        } else {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.upgrade_inserted", inserted,
+                    remainingUpgradeCircuits(), tierName(getTier())));
+        }
+        return true;
+    }
+
+    public void addUpgradeCircuitDrops(Collection<ItemStack> drops) {
+        for (ItemStack stack : upgradeCircuits) {
+            if (!stack.isEmpty()) {
+                drops.add(stack.copy());
+            }
+        }
+    }
+
+    public boolean handleLinkCardUse(ServerPlayer player, ItemStack card, boolean sneaking) {
+        if (!isOwner(player)) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_owner"));
+            return true;
+        }
+        if (!crossDimensionUnlocked) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_not_upgraded"));
+            return true;
+        }
+        if (sneaking) {
+            LinkCardItem.Binding existing = LinkCardItem.getBinding(card);
+            if (existing != null && !isSameBinding(existing)) {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_bound_other"));
+                return true;
+            }
+            LinkCardItem.bind(card, getLevel().dimension().location(), getPos());
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_bound"));
+            return true;
+        }
+
+        LinkCardItem.Binding binding = LinkCardItem.getBinding(card);
+        if (binding == null) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_unbound"));
+            return true;
+        }
+        if (!isSameBinding(binding)) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_bound_other"));
+            return true;
+        }
+        commitLinkCard(player, card);
+        return true;
+    }
+
+    public void collectLinkTarget(ServerPlayer player, ItemStack card, ServerLevel targetLevel, BlockPos targetPos) {
+        if (!isOwner(player)) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_owner"));
+            return;
+        }
+        if (!crossDimensionUnlocked) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_not_upgraded"));
+            return;
+        }
+        LinkCardItem.Binding binding = LinkCardItem.getBinding(card);
+        if (binding == null || !isSameBinding(binding)) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_card_bound_other"));
+            return;
+        }
+        boolean sameDimension = targetLevel.dimension().equals(getLevel().dimension());
+        if (sameDimension && isInRange(targetPos)) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_target_in_range"));
+            return;
+        }
+        List<LinkCardItem.PendingTarget> pending = LinkCardItem.getPendingTargets(card);
+        if (pending.size() >= LINK_BATCH_SIZE) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_target_limit"));
+            return;
+        }
+        ResourceLocation dimension = targetLevel.dimension().location();
+        RemoteTargetKey key = new RemoteTargetKey(dimension, targetPos.asLong());
+        if (remoteConnections.containsKey(key) || pending.stream()
+                .anyMatch(entry -> entry.dimension().equals(dimension) && entry.pos().equals(targetPos))) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_target_duplicate"));
+            return;
+        }
+        if (createTarget(targetLevel, targetPos, false) == null) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_target_invalid"));
+            return;
+        }
+        LinkCardItem.addPendingTarget(card, dimension, targetPos);
+        player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_target_added",
+                LinkCardItem.getPendingTargets(card).size(), LINK_BATCH_SIZE));
+    }
+
+    private void commitLinkCard(ServerPlayer player, ItemStack card) {
+        List<LinkCardItem.PendingTarget> pending = LinkCardItem.getPendingTargets(card);
+        if (pending.isEmpty()) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_commit_empty"));
+            return;
+        }
+
+        List<WirelessRemoteTarget> additions = new ArrayList<>();
+        long newLoad = 0L;
+        for (LinkCardItem.PendingTarget entry : pending) {
+            ServerLevel targetLevel = getServerLevel(player, entry.dimension());
+            if (targetLevel == null || !targetLevel.hasChunkAt(entry.pos())) {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_target_unloaded"));
+                return;
+            }
+            boolean sameDimension = targetLevel.dimension().equals(getLevel().dimension());
+            if (sameDimension && isInRange(entry.pos())) {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_target_in_range"));
+                return;
+            }
+            WirelessTarget target = createTarget(targetLevel, entry.pos(), false);
+            if (target == null) {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_target_invalid"));
+                return;
+            }
+            RemoteTargetKey key = new RemoteTargetKey(entry.dimension(), entry.pos().asLong());
+            if (remoteConnections.containsKey(key) || additions.stream().anyMatch(existing ->
+                    existing.dimension().equals(entry.dimension()) && existing.pos().equals(entry.pos()))) {
+                continue;
+            }
+            WirelessRemoteTarget remote = new WirelessRemoteTarget(entry.dimension(), entry.pos(), target.name(),
+                    target.kind(), target.tier(), target.voltage(), target.amperage());
+            additions.add(remote);
+            newLoad = saturatingAdd(newLoad, saturatingMultiply(remote.voltage(), remote.amperage()));
+        }
+        long outputLimitEuPerTick = saturatingMultiply(configuredOutputAmperage, getVoltage());
+        if (newLoad > outputLimitEuPerTick - Math.min(outputLimitEuPerTick, getConnectedLoadEuPerTick())) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_commit_capacity"));
+            return;
+        }
+        for (WirelessRemoteTarget remote : additions) {
+            remoteConnections.put(new RemoteTargetKey(remote.dimension(), remote.pos().asLong()), remote);
+        }
+        LinkCardItem.clearPendingTargets(card);
+        markDirty();
+        player.sendSystemMessage(Component.translatable("chat.wireless_eu.link_commit_success", additions.size()));
+    }
+
+    private boolean isSameBinding(LinkCardItem.Binding binding) {
+        return getLevel() != null && getLevel().dimension().location().equals(binding.dimension())
+                && getPos().equals(binding.pos());
+    }
+
+    private ServerLevel getServerLevel(ServerPlayer player, ResourceLocation dimension) {
+        return player.getServer().getLevel(ResourceKey.create(Registries.DIMENSION, dimension));
+    }
+
+    private ServerLevel getServerLevel(ResourceLocation dimension) {
+        return getLevel() instanceof ServerLevel serverLevel
+                ? serverLevel.getServer().getLevel(ResourceKey.create(Registries.DIMENSION, dimension)) : null;
+    }
+
+    private int installedCircuitCount() {
+        return upgradeCircuits.stream().mapToInt(ItemStack::getCount).sum();
+    }
+
+    private void addInstalledCircuitStack(ItemStack inserted) {
+        for (ItemStack installed : upgradeCircuits) {
+            if (ItemStack.isSameItemSameTags(installed, inserted)) {
+                installed.grow(inserted.getCount());
+                return;
+            }
+        }
+        upgradeCircuits.add(inserted);
+    }
+
+    public boolean isUpgradeCircuit(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+        TagKey<Item> requiredTag = circuitTag();
+        if (stack.is(requiredTag) || ForgeRegistries.ITEMS.tags().getTag(requiredTag).contains(stack.getItem())) {
+            return true;
+        }
+        // KubeJS/pack-provided tags can use an equivalent TagKey instance; compare the synced tag location too.
+        ResourceLocation requiredLocation = requiredTag.location();
+        return stack.getTags().anyMatch(tag -> requiredLocation.equals(tag.location()));
+    }
+
+    private TagKey<Item> circuitTag() {
+        String tierId = tierName(getTier()).toLowerCase(Locale.ROOT);
+        return TagKey.create(Registries.ITEM, ResourceLocation.fromNamespaceAndPath("gtceu", "circuits/" + tierId));
     }
 
     public void handleAction(ServerPlayer player, WirelessEuNetwork.ServerAction action,
@@ -216,7 +518,23 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         for (WirelessTarget target : connections.values()) {
             load = saturatingAdd(load, saturatingMultiply(target.voltage(), target.amperage()));
         }
+        for (WirelessRemoteTarget target : remoteConnections.values()) {
+            load = saturatingAdd(load, saturatingMultiply(target.voltage(), target.amperage()));
+        }
         return load;
+    }
+
+    public static boolean isPotentialLinkTarget(Level level, BlockPos targetPos) {
+        if (level == null || !level.hasChunkAt(targetPos)) {
+            return false;
+        }
+        MetaMachine machine = MetaMachine.getMachine(level, targetPos);
+        if (!(machine instanceof ITieredMachine)
+                || machine instanceof MultiblockControllerMachine
+                || machine instanceof WirelessEuBroadcasterMachine) {
+            return false;
+        }
+        return resolveReceiver(level, targetPos) != null;
     }
 
     public long getInputPerSecond() {
@@ -273,12 +591,18 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
             player.sendSystemMessage(Component.translatable("chat.wireless_eu.migration_capacity"));
             return;
         }
+        if (!remoteConnections.isEmpty() && !destination.crossDimensionUnlocked) {
+            player.sendSystemMessage(Component.translatable("chat.wireless_eu.migration_remote_upgrade"));
+            return;
+        }
         destination.connections.putAll(connections);
+        destination.remoteConnections.putAll(remoteConnections);
         if (stored > 0L) {
             destination.energyContainer.changeEnergy(stored);
             energyContainer.changeEnergy(-stored);
         }
         connections.clear();
+        remoteConnections.clear();
         markDirty();
         destination.markDirty();
         player.sendSystemMessage(Component.translatable("chat.wireless_eu.migration_success"));
@@ -410,22 +734,35 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
     }
 
     private void broadcastEnergy() {
-        if (connections.isEmpty() || energyContainer.getEnergyStored() <= 0L) {
+        if ((connections.isEmpty() && remoteConnections.isEmpty()) || energyContainer.getEnergyStored() <= 0L) {
             return;
         }
 
-        List<WirelessTarget> targets = new ArrayList<>(connections.values());
+        List<BroadcastTarget> targets = new ArrayList<>(connections.size() + remoteConnections.size());
+        for (WirelessTarget target : connections.values()) {
+            targets.add(new BroadcastTarget(target, null));
+        }
+        for (WirelessRemoteTarget target : remoteConnections.values()) {
+            targets.add(new BroadcastTarget(null, target));
+        }
         long remainingEu = saturatingMultiply(configuredOutputAmperage, getVoltage());
         int startingIndex = Math.floorMod(roundRobinIndex, targets.size());
         boolean changedConnections = false;
 
         for (int offset = 0; offset < targets.size() && remainingEu > 0L; offset++) {
-            WirelessTarget target = targets.get((startingIndex + offset) % targets.size());
-            Receiver receiver = resolveReceiver(target.pos());
+            BroadcastTarget target = targets.get((startingIndex + offset) % targets.size());
+            Level targetLevel = target.remote() == null ? getLevel() : getServerLevel(target.remote().dimension());
+            BlockPos targetPos = target.pos();
+            Receiver receiver = resolveReceiver(targetLevel, targetPos);
             long targetVoltage = receiver == null ? 0L : receiver.container().getInputVoltage();
             if (receiver == null || targetVoltage <= 0L || targetVoltage > getVoltage()) {
-                if (isLoaded(target.pos())) {
-                    connections.remove(target.pos().asLong());
+                if (isLoaded(targetLevel, targetPos)) {
+                    if (target.remote() == null) {
+                        connections.remove(targetPos.asLong());
+                    } else {
+                        remoteConnections.remove(new RemoteTargetKey(target.remote().dimension(),
+                                targetPos.asLong()));
+                    }
                     changedConnections = true;
                 }
                 continue;
@@ -632,11 +969,19 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
     }
 
     private WirelessTarget createTarget(BlockPos targetPos) {
-        if (targetPos.equals(getPos()) || !isInRange(targetPos) || !isLoaded(targetPos)) {
+        return createTarget(getLevel(), targetPos, true);
+    }
+
+    private WirelessTarget createTarget(Level targetLevel, BlockPos targetPos, boolean requireRange) {
+        if (targetLevel == null || (targetLevel.dimension().equals(getLevel().dimension()) && targetPos.equals(getPos()))
+                || !isLoaded(targetLevel, targetPos)) {
+            return null;
+        }
+        if (requireRange && (!targetLevel.dimension().equals(getLevel().dimension()) || !isInRange(targetPos))) {
             return null;
         }
 
-        MetaMachine machine = MetaMachine.getMachine(Objects.requireNonNull(getLevel()), targetPos);
+        MetaMachine machine = MetaMachine.getMachine(targetLevel, targetPos);
         if (!(machine instanceof ITieredMachine tieredMachine)
                 || tieredMachine.getTier() > getTier()
                 || machine instanceof MultiblockControllerMachine
@@ -644,7 +989,7 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
             return null;
         }
 
-        Receiver receiver = resolveReceiver(targetPos);
+        Receiver receiver = resolveReceiver(targetLevel, targetPos);
         long targetVoltage = receiver == null ? 0L : receiver.container().getInputVoltage();
         if (targetVoltage <= 0L || targetVoltage > getVoltage()) {
             return null;
@@ -663,9 +1008,8 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
                 Math.max(1L, receiver.container().getInputAmperage()));
     }
 
-    private Receiver resolveReceiver(BlockPos targetPos) {
-        Level level = getLevel();
-        if (level == null || !isLoaded(targetPos)) {
+    private static Receiver resolveReceiver(Level level, BlockPos targetPos) {
+        if (level == null || !isLoaded(level, targetPos)) {
             return null;
         }
 
@@ -683,7 +1027,10 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
     }
 
     private boolean isLoaded(BlockPos pos) {
-        Level level = getLevel();
+        return isLoaded(getLevel(), pos);
+    }
+
+    private static boolean isLoaded(Level level, BlockPos pos) {
         return level != null && level.hasChunkAt(pos);
     }
 
@@ -792,6 +1139,19 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
             return minutes + "分钟" + remainingSeconds + "秒";
         }
         return remainingSeconds + "秒";
+    }
+
+    private record BroadcastTarget(WirelessTarget local, WirelessRemoteTarget remote) {
+        private BlockPos pos() {
+            return local == null ? remote.pos() : local.pos();
+        }
+
+        private long amperage() {
+            return local == null ? remote.amperage() : local.amperage();
+        }
+    }
+
+    private record RemoteTargetKey(ResourceLocation dimension, long pos) {
     }
 
     private record Receiver(IEnergyContainer container, Direction side, boolean laser) {

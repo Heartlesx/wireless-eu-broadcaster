@@ -5,6 +5,7 @@ import com.gregtechceu.gtceu.api.addon.IGTAddon;
 import com.gregtechceu.gtceu.api.registry.registrate.GTRegistrate;
 import com.gregtechceu.gtceu.data.recipe.GTCraftingComponents;
 import com.gregtechceu.gtceu.data.recipe.misc.MetaTileEntityLoader;
+import com.gregtechceu.gtceu.common.data.GTCreativeModeTabs;
 import com.wirelesseu.machine.WirelessEuMachines;
 import net.minecraft.data.recipes.FinishedRecipe;
 import net.minecraftforge.common.Tags;
@@ -20,6 +21,7 @@ public final class WirelessEuAddon implements IGTAddon {
 
     @Override
     public void initializeAddon() {
+        WirelessEuMachines.REGISTRATE.creativeModeTab(GTCreativeModeTabs.MACHINE);
     }
 
     @Override

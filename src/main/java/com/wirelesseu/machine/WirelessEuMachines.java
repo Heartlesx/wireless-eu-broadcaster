@@ -6,9 +6,11 @@ import com.gregtechceu.gtceu.api.data.RotationState;
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.registry.registrate.GTRegistrate;
 import com.gregtechceu.gtceu.common.data.GTMachines;
+import com.gregtechceu.gtceu.common.data.GTCreativeModeTabs;
 import com.wirelesseu.WirelessEuMod;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
+import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 
 public final class WirelessEuMachines {
@@ -54,5 +56,18 @@ public final class WirelessEuMachines {
     public static void register(IEventBus modBus) {
         REGISTRATE.registerRegistrate();
         modBus.addGenericListener(MachineDefinition.class, WirelessEuMachines::registerMachines);
+        modBus.addListener(WirelessEuMachines::addToMachineCreativeTab);
+    }
+
+    private static void addToMachineCreativeTab(BuildCreativeModeTabContentsEvent event) {
+        if (event.getTab() != GTCreativeModeTabs.MACHINE.get()) {
+            return;
+        }
+        for (int tier : TIERS) {
+            MachineDefinition broadcaster = BROADCASTERS[tier];
+            if (broadcaster != null && broadcaster.getItem() != null) {
+                event.accept(broadcaster.asStack());
+            }
+        }
     }
 }

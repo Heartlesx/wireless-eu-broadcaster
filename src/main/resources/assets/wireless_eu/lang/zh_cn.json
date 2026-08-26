@@ -46,5 +46,27 @@
   "chat.wireless_eu.migration_capacity": "目标广播器缓存空间不足，迁移已取消",
   "chat.wireless_eu.migration_success": "已将连接机器和 EU 缓存迁移到更高等级广播器"
   ,"chat.wireless_eu.broadcaster_location": "广播器位置："
-  ,"chat.wireless_eu.broadcaster_location_hover": "点击传送到该广播器"
+  ,"chat.wireless_eu.broadcaster_location_hover": "点击传送到该广播器",
+  "item.wireless_eu.link_card": "链接卡",
+  "chat.wireless_eu.upgrade_owner": "只有广播器拥有者可以进行升级",
+  "chat.wireless_eu.upgrade_remaining": "该广播器距离升级还需要 %s 个 %s 级电路",
+  "chat.wireless_eu.upgrade_inserted": "已插入 %s 个电路，还需要 %s 个 %s 级电路",
+  "chat.wireless_eu.upgrade_already": "该广播器已经解锁跨维度广播和无限同维度供电范围",
+  "chat.wireless_eu.upgrade_success": "%s 级广播器升级成功，已解锁跨维度广播和无限同维度供电范围",
+  "chat.wireless_eu.link_card_not_upgraded": "该广播器尚未升级，暂时不能使用链接卡",
+  "chat.wireless_eu.link_card_owner": "只有广播器拥有者可以使用链接卡配置这台广播器",
+  "chat.wireless_eu.link_card_bound": "链接卡已绑定当前广播器",
+  "chat.wireless_eu.link_card_bound_other": "链接卡已经绑定其他有效广播器，先在合成栏合成一次以清空卡片数据",
+  "chat.wireless_eu.link_card_unbound": "这张链接卡还没有绑定广播器，请先对广播器按 Shift 右键",
+  "chat.wireless_eu.link_card_source_missing": "链接卡绑定的广播器不存在或所在维度不可用",
+  "chat.wireless_eu.link_target_in_range": "该目标在同维度扫描范围内，请使用扫描功能连接",
+  "chat.wireless_eu.link_target_limit": "本批链接数量已达到 32 个，请回到广播器提交链接卡",
+  "chat.wireless_eu.link_target_duplicate": "该目标已经链接或已在当前链接卡中",
+  "chat.wireless_eu.link_target_invalid": "这个方块不是可链接的有效 GTCEu 能量目标，或等级超过广播器",
+  "chat.wireless_eu.link_target_added": "已加入链接卡：%s/%s",
+  "chat.wireless_eu.link_target_unloaded": "链接提交取消：有目标区块未加载，请加载目标区块后重试",
+  "chat.wireless_eu.link_commit_empty": "链接卡中没有待提交的目标",
+  "chat.wireless_eu.link_commit_capacity": "链接提交取消：这些目标会超过广播器的总输出上限",
+  "chat.wireless_eu.link_commit_success": "已将 %s 个目标链接到广播器，链接卡可以继续收集下一批目标"
+  ,"chat.wireless_eu.migration_remote_upgrade": "目标广播器尚未安装 32 个同级电路，无法接收跨维度连接"
 }

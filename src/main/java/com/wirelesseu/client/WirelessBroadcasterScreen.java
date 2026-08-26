@@ -10,7 +10,10 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.player.Inventory;
 
 import java.util.HashSet;
@@ -20,6 +23,8 @@ import java.util.ArrayList;
 import java.util.Set;
 
 public final class WirelessBroadcasterScreen extends AbstractContainerScreen<WirelessBroadcasterMenu> {
+    private static final int BASE_IMAGE_WIDTH = 430;
+    private static final int BASE_IMAGE_HEIGHT = 300;
     private static final int LIST_VISIBLE_ROWS = 11;
     private static final int LIST_ROW_HEIGHT = 18;
     private static final long DETAIL_TOOLTIP_DELAY_MILLIS = 500L;
@@ -41,16 +46,20 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
     private Component frozenDetailTooltip;
     private boolean migrationMenu;
     private WirelessEuNetwork.HigherBroadcasterInfo pendingMigration;
+    private double uiScale = 1.0D;
 
     public WirelessBroadcasterScreen(WirelessBroadcasterMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
-        imageWidth = 430;
-        imageHeight = 300;
+        imageWidth = BASE_IMAGE_WIDTH;
+        imageHeight = BASE_IMAGE_HEIGHT;
         inventoryLabelY = 10_000;
     }
 
     @Override
     protected void init() {
+        uiScale = calculateUiScale();
+        imageWidth = scaled(BASE_IMAGE_WIDTH);
+        imageHeight = scaled(BASE_IMAGE_HEIGHT);
         super.init();
         scanButton = addRenderableWidget(Button.builder(Component.translatable("gui.wireless_eu.scan"), button ->
                         WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.SCAN, 0, List.of()))
@@ -103,24 +112,30 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         dismissalButton = addRenderableWidget(Button.builder(Component.literal("OK"), button -> dismissRejection())
                 .bounds(leftPos + 174, topPos + 162, 82, 20)
                 .build());
-        dismissalButton.visible = false;
+                dismissalButton.visible = false;
         setPrimaryWidgetsVisible(true);
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics);
-        super.render(graphics, mouseX, mouseY, partialTick);
+        int baseMouseX = (int) Math.round(toBaseX(mouseX));
+        int baseMouseY = (int) Math.round(toBaseY(mouseY));
+        graphics.pose().pushPose();
+        graphics.pose().translate(leftPos * (1.0D - uiScale), topPos * (1.0D - uiScale), 0.0D);
+        graphics.pose().scale((float) uiScale, (float) uiScale, 1.0F);
+        super.render(graphics, baseMouseX, baseMouseY, partialTick);
         if (migrationMenu && rejectionMessage == null) {
-            renderMigrationModal(graphics);
+            renderMigrationModal(graphics, baseMouseX, baseMouseY);
         }
         if (rejectionMessage != null) {
-            renderRejectionDialog(graphics, mouseX, mouseY);
+            renderRejectionDialog(graphics, baseMouseX, baseMouseY);
             clearDetailTooltip();
         } else {
-            renderTooltip(graphics, mouseX, mouseY);
-            renderDetailTooltip(graphics, mouseX, mouseY);
+            renderTooltip(graphics, baseMouseX, baseMouseY);
+            renderDetailTooltip(graphics, baseMouseX, baseMouseY);
         }
+        graphics.pose().popPose();
     }
 
     @Override
@@ -130,12 +145,12 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         int top = topPos;
 
         // AE2-inspired stepped terminal shell, drawn from independent Wireless EU colors.
-        graphics.fill(left, top + 6, left + imageWidth, top + imageHeight - 6, 0xFF111111);
-        graphics.fill(left + 6, top, left + imageWidth - 6, top + imageHeight, 0xFF111111);
-        graphics.fill(left + 2, top + 8, left + imageWidth - 2, top + imageHeight - 8, 0xFFF1F1F1);
-        graphics.fill(left + 8, top + 2, left + imageWidth - 8, top + imageHeight - 2, 0xFFF1F1F1);
-        graphics.fill(left + 4, top + 9, left + imageWidth - 4, top + imageHeight - 9, 0xFFC6C6C6);
-        graphics.fill(left + 9, top + 4, left + imageWidth - 9, top + imageHeight - 4, 0xFFC6C6C6);
+        graphics.fill(left, top + 6, left + BASE_IMAGE_WIDTH, top + BASE_IMAGE_HEIGHT - 6, 0xFF111111);
+        graphics.fill(left + 6, top, left + BASE_IMAGE_WIDTH - 6, top + BASE_IMAGE_HEIGHT, 0xFF111111);
+        graphics.fill(left + 2, top + 8, left + BASE_IMAGE_WIDTH - 2, top + BASE_IMAGE_HEIGHT - 8, 0xFFF1F1F1);
+        graphics.fill(left + 8, top + 2, left + BASE_IMAGE_WIDTH - 8, top + BASE_IMAGE_HEIGHT - 2, 0xFFF1F1F1);
+        graphics.fill(left + 4, top + 9, left + BASE_IMAGE_WIDTH - 4, top + BASE_IMAGE_HEIGHT - 9, 0xFFC6C6C6);
+        graphics.fill(left + 9, top + 4, left + BASE_IMAGE_WIDTH - 9, top + BASE_IMAGE_HEIGHT - 4, 0xFFC6C6C6);
         drawInset(graphics, left + 124, top + 8, left + 302, top + 30, 0xFF979797);
         drawInset(graphics, left + 28, top + 52, left + 302, top + 263, 0xFF8F8F8F);
         drawInset(graphics, left + 306, top + 52, left + 423, top + 263, 0xFFA9A9A9);
@@ -177,6 +192,8 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        mouseX = toBaseX(mouseX);
+        mouseY = toBaseY(mouseY);
         if (rejectionMessage != null) {
             if (button == 0 && mouseX >= leftPos + 174 && mouseX < leftPos + 256
                     && mouseY >= topPos + 162 && mouseY < topPos + 182) {
@@ -192,6 +209,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 migrationMenu = false;
                 pendingMigration = null;
                 setPrimaryWidgetsVisible(true);
+                playButtonClick();
                 return true;
             }
             if (pendingMigration != null) {
@@ -199,24 +217,25 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                         && mouseY >= modalTop + 68 && mouseY < modalTop + 102) {
                     WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.LOCATE_BROADCASTER, 0,
                             List.of(pendingMigration.pos().asLong()));
+                    playButtonClick();
                     return true;
                 }
                 if (mouseX >= modalLeft + 50 && mouseX < modalLeft + 125
                         && mouseY >= modalTop + 120 && mouseY < modalTop + 144) {
                     WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.MIGRATE_TO_HIGHER, 0,
                             List.of(pendingMigration.pos().asLong()));
-                    migrationMenu = false; pendingMigration = null; setPrimaryWidgetsVisible(true); return true;
+                    migrationMenu = false; pendingMigration = null; setPrimaryWidgetsVisible(true); playButtonClick(); return true;
                 }
                 if (mouseX >= modalLeft + 135 && mouseX < modalLeft + 210
                         && mouseY >= modalTop + 120 && mouseY < modalTop + 144) {
-                    pendingMigration = null; return true;
+                    pendingMigration = null; playButtonClick(); return true;
                 }
             } else {
                 List<WirelessEuNetwork.HigherBroadcasterInfo> targets = state().higherBroadcasters();
                 for (int i = 0; i < targets.size() && i < 5; i++) {
                     if (mouseX >= modalLeft + 12 && mouseX < modalLeft + 248
                             && mouseY >= modalTop + 50 + i * 26 && mouseY < modalTop + 74 + i * 26) {
-                        pendingMigration = targets.get(i); return true;
+                        pendingMigration = targets.get(i); playButtonClick(); return true;
                     }
                 }
             }
@@ -237,6 +256,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 if (mouseX >= leftPos + 263) {
                     WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.LOCATE_TARGET, 0,
                             List.of(target.pos().asLong()));
+                    playButtonClick();
                     return true;
                 }
                 if (!state.canConfigure()) {
@@ -246,13 +266,14 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 if (!selectedPositions.add(pos)) {
                     selectedPositions.remove(pos);
                 }
+                playButtonClick();
                 return true;
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    private void renderMigrationModal(GuiGraphics graphics) {
+    private void renderMigrationModal(GuiGraphics graphics, int mouseX, int mouseY) {
         ClientBroadcasterState.State state = state();
         int modalLeft = leftPos + 82;
         int modalTop = topPos + 48;
@@ -261,14 +282,14 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         int modalBottom = modalTop + (pendingMigration == null ? 72 + rowCount * 26 : 160);
         graphics.pose().pushPose();
         graphics.pose().translate(0.0D, 0.0D, 100.0D);
-        graphics.fill(0, 0, width, height, 0x99000000);
+        graphics.fill(leftPos, topPos, leftPos + BASE_IMAGE_WIDTH, topPos + BASE_IMAGE_HEIGHT, 0x99000000);
         graphics.fill(modalLeft, modalTop, modalRight, modalBottom, 0xFF252525);
         graphics.fill(modalLeft + 2, modalTop + 2, modalRight - 2, modalBottom - 2, 0xFFF2F2F2);
         graphics.fill(modalLeft + 5, modalTop + 5, modalRight - 5, modalBottom - 5, 0xFFC2C2C2);
         graphics.drawString(font, Component.translatable("gui.wireless_eu.migration_targets"), modalLeft + 12,
                 modalTop + 13, 0xFF303030, false);
         drawTerminalButton(graphics, modalRight - 35, modalTop + 7, 28, 26,
-                Component.literal("X"), false, true, -1, -1);
+                Component.literal("X"), false, true, mouseX, mouseY);
         if (pendingMigration != null) {
             graphics.drawString(font, Component.translatable("gui.wireless_eu.migration_confirm"), modalLeft + 18, modalTop + 58, 0xFF303030, false);
             graphics.drawString(font, WirelessEuBroadcasterMachine.tierName(pendingMigration.tier()) + " ["
@@ -312,17 +333,20 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         if (mouseX >= leftPos + 28 && mouseX < leftPos + 110 && mouseY >= topPos + 10 && mouseY < topPos + 28) {
             if (scanButton.active) {
                 WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.SCAN, 0, List.of());
+                playButtonClick();
             }
             return true;
         }
         if (mouseX >= leftPos + 28 && mouseX < leftPos + 156 && mouseY >= topPos + 32 && mouseY < topPos + 50) {
             targetFilter = TargetFilter.UNCONNECTED;
             scrollOffset = 0;
+            playButtonClick();
             return true;
         }
         if (mouseX >= leftPos + 160 && mouseX < leftPos + 302 && mouseY >= topPos + 32 && mouseY < topPos + 50) {
             targetFilter = TargetFilter.CONNECTED;
             scrollOffset = 0;
+            playButtonClick();
             return true;
         }
         if (mouseX >= leftPos + 306 && mouseX < leftPos + 423 && mouseY >= topPos + 32 && mouseY < topPos + 50) {
@@ -330,6 +354,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 migrationMenu = true;
                 pendingMigration = null;
                 setPrimaryWidgetsVisible(false);
+                playButtonClick();
             }
             return true;
         }
@@ -338,6 +363,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 if (connectButton.active) {
                     WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.CONNECT_SELECTED, 0,
                             selectedPositions);
+                    playButtonClick();
                 }
                 return true;
             }
@@ -345,15 +371,22 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 if (disconnectButton.active) {
                     WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.DISCONNECT_SELECTED, 0,
                             selectedPositions);
+                    playButtonClick();
                 }
                 return true;
             }
             if (mouseX >= leftPos + 306 && mouseX < leftPos + 423) {
                 WirelessEuRangePreview.toggle(menu.getPos());
+                playButtonClick();
                 return true;
             }
         }
         return false;
+    }
+
+    private void playButtonClick() {
+        Minecraft.getInstance().getSoundManager().play(
+                SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
     }
 
     private void drawInset(GuiGraphics graphics, int left, int top, int right, int bottom, int fill) {
@@ -406,6 +439,8 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         }
         ClientBroadcasterState.State state = state();
         int maximumOffset = Math.max(0, displayRows(state).size() - LIST_VISIBLE_ROWS);
+        mouseX = toBaseX(mouseX);
+        mouseY = toBaseY(mouseY);
         if (mouseX >= leftPos + 28 && mouseX < leftPos + 302 && mouseY >= topPos + 54 && mouseY < topPos + 263) {
             scrollOffset = Math.max(0, Math.min(maximumOffset, scrollOffset - (int) Math.signum(delta)));
             return true;
@@ -417,7 +452,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         List<DisplayRow> rows = displayRows(state);
         int maximumOffset = Math.max(0, rows.size() - LIST_VISIBLE_ROWS);
         scrollOffset = Math.min(scrollOffset, maximumOffset);
-        graphics.enableScissor(leftPos + 33, topPos + 58, leftPos + 298, topPos + 263);
+        graphics.enableScissor(scaledX(33), scaledY(58), scaledX(298), scaledY(263));
         try {
             for (int row = 0; row < LIST_VISIBLE_ROWS; row++) {
                 int index = scrollOffset + row;
@@ -500,11 +535,11 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         int dialogTop = topPos + 103;
         int dialogRight = dialogLeft + 240;
         int dialogBottom = dialogTop + 94;
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xB0000000);
+        graphics.fill(leftPos, topPos, leftPos + BASE_IMAGE_WIDTH, topPos + BASE_IMAGE_HEIGHT, 0xB0000000);
         graphics.fill(dialogLeft, dialogTop, dialogRight, dialogBottom, 0xFF292929);
         graphics.fill(dialogLeft + 2, dialogTop + 2, dialogRight - 2, dialogBottom - 2, 0xFFF1F1F1);
         graphics.fill(dialogLeft + 5, dialogTop + 5, dialogRight - 5, dialogBottom - 5, 0xFFC1C1C1);
-        int messageLeft = leftPos + (imageWidth - font.width(rejectionMessage)) / 2;
+        int messageLeft = leftPos + (BASE_IMAGE_WIDTH - font.width(rejectionMessage)) / 2;
         graphics.drawString(font, rejectionMessage, messageLeft, dialogTop + 27, 0xFF4A2020, false);
         drawTerminalButton(graphics, leftPos + 174, topPos + 162, 82, 20,
                 Component.literal("OK"), false, true, mouseX, mouseY);
@@ -519,6 +554,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
     private void dismissRejection() {
         rejectionMessage = null;
         dismissalButton.visible = false;
+        playButtonClick();
     }
 
     private void renderDetailTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -560,6 +596,32 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         hoveredDetailTarget = null;
         detailHoverStartMillis = 0L;
         frozenDetailTooltip = null;
+    }
+
+    private double calculateUiScale() {
+        double availableWidth = Math.max(1, width - 16) / (double) BASE_IMAGE_WIDTH;
+        double availableHeight = Math.max(1, height - 16) / (double) BASE_IMAGE_HEIGHT;
+        return Math.min(1.0D, Math.min(availableWidth, availableHeight));
+    }
+
+    private int scaled(int value) {
+        return Math.max(1, (int) Math.round(value * uiScale));
+    }
+
+    private int scaledX(int value) {
+        return leftPos + scaled(value);
+    }
+
+    private int scaledY(int value) {
+        return topPos + scaled(value);
+    }
+
+    private double toBaseX(double value) {
+        return leftPos + (value - leftPos) / uiScale;
+    }
+
+    private double toBaseY(double value) {
+        return topPos + (value - topPos) / uiScale;
     }
 
     private static long toEuPerTick(long euPerSecond) {

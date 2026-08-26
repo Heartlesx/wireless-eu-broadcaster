@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.0.1
+
+- Added a server-side right-click fallback for tagged circuit upgrades and aligned tag lookup with Forge's live item registry.
+
+## 2.0.0
+
+- Fixed Shift-right-click circuit upgrades by handling tagged circuits through GTCEu's machine interaction hook for every broadcaster tier.
+
+## 1.2.10
+
+- Fixed tier-circuit upgrade matching for pack-provided circuits, including any circuit carrying the broadcaster's `gtceu:circuits/<tier>` tag.
+
+## 1.2.9
+
+- Dynamically scales the broadcaster UI while preserving its layout and synchronized mouse hitboxes on smaller displays.
+- Added same-tier mixed-circuit upgrades for LV through MAX broadcasters. Upgrades unlock unlimited same-dimension links and link-card cross-dimension targets.
+- Added owner-only Shift-right-click upgrades, progress messages, and return of the exact installed circuit stacks when a broadcaster is broken.
+- Added the creative-only Link Card with broadcaster binding, batches of up to 32 remote or out-of-range targets, and a special crafting reset that clears card data.
+- Cross-dimension targets use GTCEu public energy and laser APIs and are only powered while their chunks are already loaded.
+
+## 1.2.8
+
+- Explicitly added all broadcaster item stacks to GTCEu's Machine creative tab through Forge's public creative-tab event.
+- Improved compatibility with JEI clients where Registrate creative-tab mapping is not visible during item indexing.
+
+## 1.2.7
+
+- Registered broadcaster machines in GTCEu's Machine creative tab through the public GTRegistrate API.
+- This makes broadcasters visible in vanilla Creative inventory and JEI, including packs using JEI instead of EMI.
+
+## 1.2.6
+
+- Added the vanilla Minecraft menu click sound to all active broadcaster UI actions and modal controls.
+
 ## 1.2.5
 
 - Increased the scanned-machine list from 9 to 11 visible rows to use the full panel height.

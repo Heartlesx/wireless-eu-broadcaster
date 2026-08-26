@@ -46,5 +46,27 @@
   "chat.wireless_eu.migration_capacity": "The destination broadcaster does not have enough buffer space",
   "chat.wireless_eu.migration_success": "Connections and EU buffer migrated to the higher-tier broadcaster"
   ,"chat.wireless_eu.broadcaster_location": "Broadcaster location: "
-  ,"chat.wireless_eu.broadcaster_location_hover": "Click to teleport to this broadcaster"
+  ,"chat.wireless_eu.broadcaster_location_hover": "Click to teleport to this broadcaster",
+  "item.wireless_eu.link_card": "Link Card",
+  "chat.wireless_eu.upgrade_owner": "Only the broadcaster owner can upgrade it",
+  "chat.wireless_eu.upgrade_remaining": "This broadcaster needs %s more %s-tier circuits for the upgrade",
+  "chat.wireless_eu.upgrade_inserted": "Inserted %s circuits; %s more %s-tier circuits are required",
+  "chat.wireless_eu.upgrade_already": "This broadcaster already has cross-dimension broadcasting and unlimited same-dimension range",
+  "chat.wireless_eu.upgrade_success": "%s broadcaster upgraded: cross-dimension broadcasting and unlimited same-dimension range unlocked",
+  "chat.wireless_eu.link_card_not_upgraded": "This broadcaster has not been upgraded and cannot use link cards",
+  "chat.wireless_eu.link_card_owner": "Only the broadcaster owner can configure it with a link card",
+  "chat.wireless_eu.link_card_bound": "The link card is now bound to this broadcaster",
+  "chat.wireless_eu.link_card_bound_other": "This link card is bound to another valid broadcaster. Craft it once to clear its data first",
+  "chat.wireless_eu.link_card_unbound": "This link card is not bound. Shift-right-click a broadcaster first",
+  "chat.wireless_eu.link_card_source_missing": "The broadcaster bound to this link card no longer exists or its dimension is unavailable",
+  "chat.wireless_eu.link_target_in_range": "This target is within the same-dimension scan range; connect it through scanning",
+  "chat.wireless_eu.link_target_limit": "This batch already has 32 targets. Return to the broadcaster to submit the link card",
+  "chat.wireless_eu.link_target_duplicate": "This target is already linked or already on the link card",
+  "chat.wireless_eu.link_target_invalid": "This is not a valid GTCEu energy target, or its tier is above the broadcaster",
+  "chat.wireless_eu.link_target_added": "Added to link card: %s/%s",
+  "chat.wireless_eu.link_target_unloaded": "Link submission cancelled: a target chunk is not loaded",
+  "chat.wireless_eu.link_commit_empty": "The link card has no pending targets",
+  "chat.wireless_eu.link_commit_capacity": "Link submission cancelled: these targets exceed the broadcaster output limit",
+  "chat.wireless_eu.link_commit_success": "Linked %s targets to the broadcaster; the link card can collect another batch"
+  ,"chat.wireless_eu.migration_remote_upgrade": "The destination broadcaster needs its 32-circuit upgrade before it can receive remote connections"
 }
