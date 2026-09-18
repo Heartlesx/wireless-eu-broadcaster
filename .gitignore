@@ -1,0 +1,12 @@
+# Gradle / ForgeGradle output
+.gradle/
+build/
+out/
+
+# Development run directories
+run/
+run-server/
+logs/
+
+# Third party mod jars copied from the target modpack (not redistributed here)
+libs/*.jar

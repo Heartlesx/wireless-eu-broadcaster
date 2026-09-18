@@ -1,0 +1,19 @@
+[
+  {
+    "modid": "wireless_eu",
+    "name": "Wireless EU",
+    "description": "GT Lite wireless EU broadcasters for Minecraft 1.12.2.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "url": "",
+    "updateUrl": "",
+    "authorList": ["Extra_RawStyle"],
+    "credits": "",
+    "logoFile": "",
+    "screenshots": [],
+    "dependencies": [
+      "gregtech",
+      "gtlitecore"
+    ]
+  }
+]
