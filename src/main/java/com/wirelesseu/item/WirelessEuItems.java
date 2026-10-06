@@ -14,6 +14,7 @@ import com.wirelesseu.WirelessEuMod;
 
 public final class WirelessEuItems {
     public static LinkCardItem LINK_CARD;
+    public static EnergyBindingCardItem ENERGY_BINDING_CARD;
     private static boolean registered;
 
     private WirelessEuItems() {
@@ -31,6 +32,10 @@ public final class WirelessEuItems {
         if (LINK_CARD == null) {
             LINK_CARD = new LinkCardItem();
             event.getRegistry().register(LINK_CARD);
+        }
+        if (ENERGY_BINDING_CARD == null) {
+            ENERGY_BINDING_CARD = new EnergyBindingCardItem();
+            event.getRegistry().register(ENERGY_BINDING_CARD);
         }
     }
 

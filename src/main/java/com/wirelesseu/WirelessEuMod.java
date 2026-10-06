@@ -1,7 +1,9 @@
 package com.wirelesseu;
 
+import com.wirelesseu.client.WirelessEuModels;
 import com.wirelesseu.client.WirelessEuRangePreview;
 import com.wirelesseu.command.WirelessEuCommand;
+import com.wirelesseu.event.AutoConnectHandler;
 import com.wirelesseu.gui.WirelessEuGuiHandler;
 import com.wirelesseu.item.WirelessEuItems;
 import com.wirelesseu.machine.WirelessEuBroadcasterMachine;
@@ -11,6 +13,7 @@ import net.minecraft.util.EnumActionResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraft.entity.item.EntityItem;
@@ -35,19 +38,40 @@ import org.apache.logging.log4j.Logger;
         dependencies = "required-after:gregtech;required-after:gtlitecore;after:theoneprobe")
 public final class WirelessEuMod {
     public static final String MOD_ID = "wireless_eu";
-    public static final String VERSION = "2.1.1-forge-1.12.2";
+    public static final String VERSION = "2.1.4-dev.6-forge-1.12.2";
+    public static boolean enableEnergyAmplification = true;
+    public static boolean enableAutoConnect = true;
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
     public static WirelessEuMod instance;
 
     public WirelessEuMod() {
         instance = this;
         WirelessEuItems.register();
+        AutoConnectHandler.register();
         MinecraftForge.EVENT_BUS.register(WirelessEuMachines.class);
         MinecraftForge.EVENT_BUS.register(this);
     }
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
+        Configuration config = new Configuration(event.getSuggestedConfigurationFile());
+        config.load();
+        enableEnergyAmplification = config.get(Configuration.CATEGORY_GENERAL, "enableEnergyAmplification", true,
+                "Multiply incoming EU by 2.5. When false, incoming EU is stored at 1x. "
+                        + "Applies to normal EU and laser input. Restart required; server configuration controls multiplayer.")
+                .setRequiresMcRestart(true).getBoolean(true);
+        enableAutoConnect = config.get(Configuration.CATEGORY_GENERAL, "enableAutoConnect", true,
+                "Automatically connect compatible GT machines placed by a player who carries an Energy Binding Card "
+                        + "bound to a broadcaster. Restart required; server configuration controls multiplayer.")
+                .setRequiresMcRestart(true).getBoolean(true);
+        if (FMLCommonHandler.instance().getSide().isClient()) {
+            // ModelRegistryEvent fires at the end of the preInit phase (Loader.preinitializeMods), so the handler
+            // must be registered before that point - init() would be too late and items would render as missing models.
+            WirelessEuModels.register();
+        }
+        if (config.hasChanged()) {
+            config.save();
+        }
         WirelessEuNetwork.register();
         NetworkRegistry.INSTANCE.registerGuiHandler(this, new WirelessEuGuiHandler());
     }

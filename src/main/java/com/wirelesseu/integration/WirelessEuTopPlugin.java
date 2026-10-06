@@ -35,9 +35,12 @@ public final class WirelessEuTopPlugin implements Function<ITheOneProbe, Void> {
                 return;
             }
             info.text("Wireless EU: " + WirelessEuBroadcasterMachine.tierName(machine.getTierValue()));
-            info.text("EU: " + WirelessEuBroadcasterMachine.formatEu(machine.getInputPerSecond()) + "/s input");
+            info.text("EU: " + WirelessEuBroadcasterMachine.formatCompactEu(machine.getInputPerSecond()) + "/s input");
+            info.text("Buffer: " + WirelessEuBroadcasterMachine.formatCompactEu(machine.getStoredEu()) + " / "
+                    + WirelessEuBroadcasterMachine.formatCompactEu(machine.getCapacityEu()) + " EU");
             info.text("Links: " + (machine.getConnections().size() + machine.getRemoteConnections().size()));
-            info.progress(machine.getInputPerSecond(), Math.max(1L, machine.getVoltage() * 256L));
+            info.progress(machine.getStoredEu().multiply(java.math.BigInteger.valueOf(10000L))
+                    .divide(machine.getCapacityEu()).longValue(), 10000L);
         }
     }
 }

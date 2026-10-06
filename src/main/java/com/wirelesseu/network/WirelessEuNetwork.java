@@ -21,6 +21,7 @@ import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
 import net.minecraftforge.fml.relauncher.Side;
 
 import java.util.ArrayList;
+import java.math.BigInteger;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -126,8 +127,8 @@ public final class WirelessEuNetwork {
                 connected.add(new TargetReference(target.dimension, target.pos));
             }
             this.state = new BroadcasterState(broadcaster.getWorld().provider.getDimension(), broadcaster.getPos(),
-                    broadcaster.isOwner(player), broadcaster.getConfiguredOutputAmperage(),
-                    broadcaster.getEnergyStored(), broadcaster.getEnergyCapacity(), broadcaster.getVoltage(),
+                    broadcaster.isOwner(player),
+                    broadcaster.getStoredEu(), broadcaster.getCapacityEu(), broadcaster.getVoltage(),
                     broadcaster.getInputPerSecond(), broadcaster.getFillTimeSeconds(),
                     broadcaster.getDepletionTimeSeconds(), broadcaster.getConnectedLoadEuPerTick(),
                     broadcaster.getScanResults(), broadcaster.getConnections(), broadcaster.getRemoteConnections(),
@@ -139,14 +140,13 @@ public final class WirelessEuNetwork {
             int dimension = buf.readInt();
             BlockPos pos = BlockPos.fromLong(buf.readLong());
             boolean canConfigure = buf.readBoolean();
-            int outputAmperage = buf.readInt();
-            long storedEu = buf.readLong();
-            long capacityEu = buf.readLong();
+            BigInteger storedEu = new BigInteger(ByteBufUtils.readUTF8String(buf));
+            BigInteger capacityEu = new BigInteger(ByteBufUtils.readUTF8String(buf));
             long voltage = buf.readLong();
-            long inputEuPerSecond = buf.readLong();
-            long fillTimeSeconds = buf.readLong();
-            long depletionTimeSeconds = buf.readLong();
-            long connectedLoadEuPerTick = buf.readLong();
+            BigInteger inputEuPerSecond = new BigInteger(ByteBufUtils.readUTF8String(buf));
+            BigInteger fillTimeSeconds = new BigInteger(ByteBufUtils.readUTF8String(buf));
+            BigInteger depletionTimeSeconds = new BigInteger(ByteBufUtils.readUTF8String(buf));
+            BigInteger connectedLoadEuPerTick = new BigInteger(ByteBufUtils.readUTF8String(buf));
             List<WirelessTarget> scanResults = readTargets(buf);
             List<WirelessTarget> connections = readTargets(buf);
             List<WirelessRemoteTarget> remoteConnections = readRemoteTargets(buf);
@@ -158,7 +158,7 @@ public final class WirelessEuNetwork {
             for (WirelessRemoteTarget target : remoteConnections) {
                 connectedTargets.add(new TargetReference(target.dimension, target.pos));
             }
-            this.state = new BroadcasterState(dimension, pos, canConfigure, outputAmperage, storedEu, capacityEu,
+            this.state = new BroadcasterState(dimension, pos, canConfigure, storedEu, capacityEu,
                     voltage, inputEuPerSecond, fillTimeSeconds, depletionTimeSeconds, connectedLoadEuPerTick,
                     scanResults, connections, remoteConnections, connectedTargets, higherBroadcasters);
         }
@@ -168,14 +168,13 @@ public final class WirelessEuNetwork {
             buf.writeInt(state.dimension);
             buf.writeLong(state.pos.toLong());
             buf.writeBoolean(state.canConfigure);
-            buf.writeInt(state.outputAmperage);
-            buf.writeLong(state.storedEu);
-            buf.writeLong(state.capacityEu);
+            ByteBufUtils.writeUTF8String(buf, state.storedEu.toString());
+            ByteBufUtils.writeUTF8String(buf, state.capacityEu.toString());
             buf.writeLong(state.voltage);
-            buf.writeLong(state.inputEuPerSecond);
-            buf.writeLong(state.fillTimeSeconds);
-            buf.writeLong(state.depletionTimeSeconds);
-            buf.writeLong(state.connectedLoadEuPerTick);
+            ByteBufUtils.writeUTF8String(buf, state.inputEuPerSecond.toString());
+            ByteBufUtils.writeUTF8String(buf, state.fillTimeSeconds.toString());
+            ByteBufUtils.writeUTF8String(buf, state.depletionTimeSeconds.toString());
+            ByteBufUtils.writeUTF8String(buf, state.connectedLoadEuPerTick.toString());
             writeTargets(buf, state.scanResults);
             writeTargets(buf, state.connections);
             writeRemoteTargets(buf, state.remoteConnections);

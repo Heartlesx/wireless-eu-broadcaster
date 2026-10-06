@@ -1,5 +1,6 @@
 package com.wirelesseu.client;
 
+import com.wirelesseu.gui.WirelessEuContainer;
 import com.wirelesseu.machine.TargetKind;
 import com.wirelesseu.machine.WirelessEuBroadcasterMachine;
 import com.wirelesseu.machine.WirelessEuMachines;
@@ -21,6 +22,7 @@ import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -41,6 +43,7 @@ public final class WirelessBroadcasterScreen extends GuiScreen {
     private static final long DETAIL_TOOLTIP_DELAY_MILLIS = 500L;
 
     private final BlockPos pos;
+    private final WirelessEuContainer clientContainer;
     private final Set<WirelessEuNetwork.TargetReference> selectedTargets = new HashSet<>();
     private int scrollOffset;
     private int leftPos;
@@ -57,12 +60,19 @@ public final class WirelessBroadcasterScreen extends GuiScreen {
 
     public WirelessBroadcasterScreen(BlockPos pos) {
         this.pos = pos;
+        this.clientContainer = new WirelessEuContainer(pos);
         // Only ESC closes this screen; the inventory key must not trigger the ingame key handling.
         this.allowUserInput = false;
     }
 
     @Override
     public void initGui() {
+        if (mc.player != null && mc.player.openContainer != clientContainer) {
+            // Container screens hand their own container to openContainer (AE2 does this in initGui too), so Forge's
+            // OpenGuiHandler stamps the server window id onto it. Without this the player's inventory container would
+            // be stamped instead, and every later inventory click would be silently dropped by the server.
+            mc.player.openContainer = clientContainer;
+        }
         float widthScale = (width - 16) / (float) BASE_WIDTH;
         float heightScale = (height - 16) / (float) BASE_HEIGHT;
         uiScale = Math.min(1.0F, Math.min(widthScale, heightScale));
@@ -195,24 +205,24 @@ public final class WirelessBroadcasterScreen extends GuiScreen {
         drawString(I18n.format("gui.wireless_eu.buffer"), x, y, 0xFF3C3C3C);
         String buffer = WirelessEuBroadcasterMachine.formatCompactEu(state.storedEu) + " / "
                 + WirelessEuBroadcasterMachine.formatCompactEu(state.capacityEu);
-        drawString(trim(buffer, 101), x, y + 13, 0xFF202020);
-        drawBar(x, y + 27, 101, 7, state.capacityEu <= 0L ? 0.0D
-                : (double) state.storedEu / (double) state.capacityEu, 0xFF5A9E7A);
+        drawFittedString(buffer, x, y + 13, 101, 0xFF202020);
+        drawBar(x, y + 27, 101, 7, state.capacityEu.signum() <= 0 ? 0.0D
+                : state.storedEu.doubleValue() / state.capacityEu.doubleValue(), 0xFF5A9E7A);
 
         drawString(I18n.format("gui.wireless_eu.input"), x, y + 45, 0xFF3C3C3C);
-        long inputEuPerTick = toEuPerTick(state.inputEuPerSecond);
+        BigInteger inputEuPerTick = toEuPerTick(state.inputEuPerSecond);
         String input = WirelessEuBroadcasterMachine.formatCompactEu(inputEuPerTick) + " EU/t  "
                 + WirelessEuBroadcasterMachine.formatInputEquivalent(inputEuPerTick);
         drawString(trim(input, 101), x, y + 58, 0xFF202020);
 
         drawString(I18n.format("gui.wireless_eu.time_to_full"), x, y + 78, 0xFF3C3C3C);
-        drawString(WirelessEuBroadcasterMachine.formatDuration(state.fillTimeSeconds), x, y + 91, 0xFF202020);
+        drawFittedString(WirelessEuBroadcasterMachine.formatDuration(state.fillTimeSeconds), x, y + 91, 101, 0xFF202020);
         drawString(I18n.format("gui.wireless_eu.time_to_empty"), x, y + 108, 0xFF3C3C3C);
-        drawString(WirelessEuBroadcasterMachine.formatDuration(state.depletionTimeSeconds), x, y + 121, 0xFF202020);
+        drawFittedString(WirelessEuBroadcasterMachine.formatDuration(state.depletionTimeSeconds), x, y + 121, 101, 0xFF202020);
 
         drawString(I18n.format("gui.wireless_eu.connection_amperage"), x, y + 138, 0xFF3C3C3C);
         String load = WirelessEuBroadcasterMachine.formatAmperageLoad(state.connectedLoadEuPerTick, state.voltage)
-                + " " + I18n.format("gui.wireless_eu.used_of") + " " + state.outputAmperage + "A";
+                + " " + I18n.format("gui.wireless_eu.used_of") + " " + I18n.format("gui.wireless_eu.unlimited");
         drawString(trim(load, 101), x, y + 151, 0xFF202020);
         drawString(I18n.format(state.canConfigure ? "gui.wireless_eu.owner" : "gui.wireless_eu.read_only"),
                 x, y + 168, state.canConfigure ? 0xFF2D7D49 : 0xFF9A3333);
@@ -450,9 +460,16 @@ public final class WirelessBroadcasterScreen extends GuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
-        if (keyCode == mc.gameSettings.keyBindInventory.getKeyCode()) {
-            // Behaves like a container screen: the inventory key closes this screen (and does not open the inventory).
-            mc.displayGuiScreen(null);
+        if (keyCode == 1 || keyCode == mc.gameSettings.keyBindInventory.getKeyCode()) {
+            // Same as vanilla GuiContainer.keyTyped (ESC or inventory key): closeScreen() sends CPacketCloseWindow so
+            // the server drops this slot-less container. Without that packet the server keeps it open and silently
+            // discards every following inventory click (window id mismatch), desyncing items until the player leaves
+            // the 8-block range. The inventory key still only closes, it does not open the inventory.
+            if (mc.player != null) {
+                mc.player.closeScreen();
+            } else {
+                mc.displayGuiScreen(null);
+            }
             if (mc.currentScreen == null) {
                 mc.setIngameFocus();
             }
@@ -505,15 +522,15 @@ public final class WirelessBroadcasterScreen extends GuiScreen {
         } else if (target != null && frozenDetailTooltip == null
                 && now - detailHoverStartMillis >= DETAIL_TOOLTIP_DELAY_MILLIS) {
             BroadcasterState state = state();
-            long inputEuPerTick = toEuPerTick(state.inputEuPerSecond);
+            BigInteger inputEuPerTick = toEuPerTick(state.inputEuPerSecond);
             frozenDetailTooltip = target == DetailTarget.BUFFER
-                    ? WirelessEuBroadcasterMachine.formatEu(state.storedEu) + " / "
+                    ? WirelessEuBroadcasterMachine.formatEu(state.storedEu) + " EU\n"
                     + WirelessEuBroadcasterMachine.formatEu(state.capacityEu) + " EU"
                     : WirelessEuBroadcasterMachine.formatEu(inputEuPerTick) + " EU/t ("
                     + WirelessEuBroadcasterMachine.formatInputEquivalent(inputEuPerTick) + ")";
         }
         if (frozenDetailTooltip != null) {
-            drawHoveringText(Arrays.asList(frozenDetailTooltip), mouseX, mouseY);
+            drawHoveringText(Arrays.asList(frozenDetailTooltip.split("\n")), mouseX, mouseY);
         }
     }
 
@@ -659,6 +676,18 @@ public final class WirelessBroadcasterScreen extends GuiScreen {
         fontRenderer.drawString(text, x, y, color);
     }
 
+    private void drawFittedString(String text, int x, int y, int width, int color) {
+        float scale = Math.min(1.0F, (float) width / Math.max(1, fontRenderer.getStringWidth(text)));
+        GlStateManager.pushMatrix();
+        try {
+            GlStateManager.translate(x, y, 0.0F);
+            GlStateManager.scale(scale, scale, 1.0F);
+            fontRenderer.drawString(text, 0, 0, color);
+        } finally {
+            GlStateManager.popMatrix();
+        }
+    }
+
     private void drawCenteredString(String text, int centerX, int y, int color) {
         fontRenderer.drawString(text, centerX - fontRenderer.getStringWidth(text) / 2, y, color);
     }
@@ -699,8 +728,8 @@ public final class WirelessBroadcasterScreen extends GuiScreen {
         return x >= left && x < left + width && y >= top && y < top + height;
     }
 
-    private static long toEuPerTick(long euPerSecond) {
-        return euPerSecond / 20L;
+    private static BigInteger toEuPerTick(BigInteger euPerSecond) {
+        return euPerSecond.divide(BigInteger.valueOf(20L));
     }
 
     private enum DetailTarget {

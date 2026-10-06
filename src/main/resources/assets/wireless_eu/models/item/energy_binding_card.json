@@ -1,0 +1,4 @@
+{
+  "parent": "item/generated",
+  "textures": {"layer0": "wireless_eu:items/energy_binding_card"}
+}

@@ -1,5 +1,6 @@
 package com.wirelesseu.command;
 
+import com.wirelesseu.machine.WirelessEuBroadcasterMachine;
 import com.wirelesseu.machine.WirelessEuMachines;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.CommandException;
@@ -52,7 +53,9 @@ public final class WirelessEuCommand extends CommandBase {
             if (world == null || !world.isBlockLoaded(pos)) {
                 throw new CommandException("chat.wireless_eu.target_unavailable");
             }
-            if (WirelessEuMachines.getMachine(world, pos) == null) {
+            // Targets are regular machines (a pump, a battery buffer, ...), not broadcasters, so this must use the
+            // same predicate as the location message that produced the clickable coordinates.
+            if (!WirelessEuBroadcasterMachine.isPotentialLinkTarget(world, pos)) {
                 throw new CommandException("chat.wireless_eu.target_not_found");
             }
             teleport(player, world, pos);

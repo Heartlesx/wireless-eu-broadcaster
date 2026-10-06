@@ -5,6 +5,7 @@ import com.wirelesseu.WirelessEuMod;
 import com.wirelesseu.command.WirelessEuCommand;
 import com.wirelesseu.gui.WirelessEuContainer;
 import com.wirelesseu.gui.WirelessEuGuiHandler;
+import com.wirelesseu.item.EnergyBindingCardItem;
 import com.wirelesseu.item.LinkCardItem;
 import com.wirelesseu.network.WirelessEuNetwork;
 import gregtech.api.GTValues;
@@ -25,12 +26,14 @@ import net.minecraft.client.resources.I18n;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.nbt.NBTBase;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
+import net.minecraft.util.NonNullList;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.Style;
@@ -44,6 +47,7 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.oredict.OreDictionary;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -65,27 +69,21 @@ import java.util.UUID;
  */
 public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuffer {
     public static final int RANGE = 384;
-    public static final int DEFAULT_OUTPUT_AMPERAGE = 65536;
     public static final int UPGRADE_CIRCUIT_COUNT = 32;
     public static final int LINK_BATCH_SIZE = 32;
-    private static final long BUFFER_VOLTAGE_MULTIPLIER = 4_608_000L;
-    private static final long INPUT_AMPERAGE_LIMIT = 256L;
-    private static final long[] COMPACT_EU_DIVISORS = {
-            1L, 1000L, 1000_000L, 1000_000_000L, 1000_000_000_000L, 1000_000_000_000_000L
-    };
-    private static final String[] COMPACT_EU_SUFFIXES = {"", "K", "M", "G", "T", "P"};
+    // Dc = decillion (10^33), Ud = undecillion (10^36).
+    private static final String[] COMPACT_EU_SUFFIXES = {"", "K", "M", "G", "T", "P", "E", "Z", "Y", "R", "Q", "Dc", "Ud"};
 
     private final int tier;
     private final Map<Long, WirelessTarget> connections = new LinkedHashMap<>();
     private final Map<String, WirelessRemoteTarget> remoteConnections = new LinkedHashMap<>();
     private final List<ItemStack> upgradeCircuits = new ArrayList<>();
     private List<WirelessTarget> scanResults = new ArrayList<>();
-    private int configuredOutputAmperage = DEFAULT_OUTPUT_AMPERAGE;
     private int roundRobinIndex;
-    private long inputSample;
-    private long inputPerSecond;
+    private BigInteger inputSample = BigInteger.ZERO;
+    private BigInteger inputPerSecond = BigInteger.ZERO;
     private long lastInputSampleTick = -1L;
-    private long lastEnergySample = -1L;
+    private BigInteger lastEnergySample = BigInteger.valueOf(-1L);
     private boolean bufferIncreasing;
     private long inputFirewallSampleTick = Long.MIN_VALUE;
     private final EnumMap<EnumFacing, Boolean> inputFirewallCache = new EnumMap<>(EnumFacing.class);
@@ -103,19 +101,45 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
     }
 
     @Override
+    public void getSubItems(CreativeTabs tab, NonNullList<ItemStack> items) {
+        super.getSubItems(tab, items);
+        ItemStack full = getStackForm();
+        NBTTagCompound tag = new NBTTagCompound();
+        tag.setBoolean("WirelessEuFullTest", true);
+        full.setTagCompound(tag);
+        full.setStackDisplayName(I18n.format("item.wireless_eu.full_test",
+                I18n.format(getMetaName() + ".name")));
+        items.add(full);
+    }
+
+    @Override
+    public String getItemSubTypeId(ItemStack stack) {
+        return stack.hasTagCompound() && stack.getTagCompound().getBoolean("WirelessEuFullTest")
+                ? "full_test" : super.getItemSubTypeId(stack);
+    }
+
+    @Override
+    public void initFromItemStackData(NBTTagCompound tag) {
+        super.initFromItemStackData(tag);
+        if (tag.getBoolean("WirelessEuFullTest")) {
+            ((AmplifyingLaserContainer) energyContainer).changeEnergy(getCapacityEu().subtract(getStoredEu()));
+        }
+    }
+
+    @Override
     public void addInformation(ItemStack stack, World world, List<String> tooltip, boolean advanced) {
         super.addInformation(stack, world, tooltip, advanced);
         tooltip.add("Wireless EU: " + tierName(tier));
-        tooltip.add("Input: 2.5x EU, max 256A");
-        tooltip.add("Output: max 65536A at machine voltage");
+        tooltip.add("Input: 1x or 2.5x EU (server config), unlimited amperage");
+        tooltip.add("Output: unlimited amperage at machine voltage");
+        tooltip.add("Buffer: " + formatCompactEu(AmplifyingLaserContainer.CAPACITY) + " EU");
         tooltip.add("Range: " + RANGE + " blocks");
     }
 
     @Override
     protected void reinitializeEnergyContainer() {
         long voltage = getVoltage();
-        this.energyContainer = new AmplifyingLaserContainer(this, saturatingMultiply(voltage,
-                BUFFER_VOLTAGE_MULTIPLIER), voltage);
+        this.energyContainer = new AmplifyingLaserContainer(this, voltage);
     }
 
     @Override
@@ -156,17 +180,17 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         long tick = getOffsetTimer();
         if (lastInputSampleTick >= 0L) {
             long elapsed = Math.max(1L, tick - lastInputSampleTick);
-            inputPerSecond = inputSample * 20L / elapsed;
+            inputPerSecond = inputSample.multiply(BigInteger.valueOf(20L)).divide(BigInteger.valueOf(elapsed));
         }
-        inputSample = 0L;
+        inputSample = BigInteger.ZERO;
         lastInputSampleTick = tick;
-        long stored = getEnergyStored();
-        bufferIncreasing = lastEnergySample >= 0L && stored > lastEnergySample;
+        BigInteger stored = getStoredEu();
+        bufferIncreasing = lastEnergySample.signum() >= 0 && stored.compareTo(lastEnergySample) > 0;
         lastEnergySample = stored;
     }
 
-    void recordInput(long amount) {
-        inputSample = saturatingAdd(inputSample, amount);
+    void recordInput(BigInteger amount) {
+        inputSample = inputSample.add(amount);
     }
 
     private void broadcastEnergy() {
@@ -187,25 +211,25 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
             return;
         }
         int start = Math.floorMod(roundRobinIndex, targets.size());
-        long remainingEu = saturatingMultiply(configuredOutputAmperage, getVoltage());
-        for (int offset = 0; offset < targets.size() && remainingEu > 0L; offset++) {
+        for (int offset = 0; offset < targets.size() && getStoredEu().signum() > 0; offset++) {
             BroadcastTarget target = targets.get((start + offset) % targets.size());
             Receiver receiver = resolveReceiver(target.world, target.pos);
             if (receiver == null || receiver.container.getInputVoltage() > getVoltage()) {
                 continue;
             }
-            long transferableEu = Math.min(remainingEu, energyContainer.getEnergyStored());
-            long available = transferableEu / Math.max(1L, receiver.container.getInputVoltage());
-            long accepted = Math.min(available, Math.max(1L, target.amperage));
+            long voltage = Math.max(1L, receiver.container.getInputVoltage());
+            // GT receivers multiply voltage by amps in long arithmetic; keep each call representable.
+            long available = getStoredEu().divide(BigInteger.valueOf(voltage))
+                    .min(BigInteger.valueOf(Long.MAX_VALUE / voltage)).longValue();
+            long accepted = Math.min(available, Math.max(1L, receiver.container.getInputAmperage()));
             if (accepted <= 0L) {
-                break;
+                continue;
             }
             accepted = receiver.container.acceptEnergyFromNetwork(receiver.side,
                     receiver.container.getInputVoltage(), accepted);
             if (accepted > 0L) {
-                long transferred = saturatingMultiply(accepted, receiver.container.getInputVoltage());
+                long transferred = accepted * voltage;
                 energyContainer.changeEnergy(-transferred);
-                remainingEu -= transferred;
             }
         }
         roundRobinIndex = (start + 1) % targets.size();
@@ -246,40 +270,36 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         return tier;
     }
 
-    public int getConfiguredOutputAmperage() {
-        return configuredOutputAmperage;
-    }
-
-    public long getInputPerSecond() {
+    public BigInteger getInputPerSecond() {
         return inputPerSecond;
     }
 
-    public long getFillTimeSeconds() {
-        long remaining = energyContainer.getEnergyCapacity() - getEnergyStored();
-        if (remaining <= 0L) {
-            return 0L;
+    public BigInteger getFillTimeSeconds() {
+        BigInteger remaining = getCapacityEu().subtract(getStoredEu());
+        if (remaining.signum() <= 0) {
+            return BigInteger.ZERO;
         }
-        return inputPerSecond <= 0L ? -1L : (remaining + inputPerSecond - 1L) / inputPerSecond;
+        return inputPerSecond.signum() <= 0 ? BigInteger.valueOf(-1L)
+                : remaining.add(inputPerSecond).subtract(BigInteger.ONE).divide(inputPerSecond);
     }
 
-    public long getDepletionTimeSeconds() {
-        long output = Math.min(saturatingMultiply(configuredOutputAmperage, getVoltage()),
-                getConnectedLoadEuPerTick());
-        long stored = getEnergyStored();
-        if (bufferIncreasing || output <= 0L || stored <= 0L) {
-            return 0L;
+    public BigInteger getDepletionTimeSeconds() {
+        BigInteger output = getConnectedLoadEuPerTick();
+        BigInteger stored = getStoredEu();
+        if (bufferIncreasing || output.signum() <= 0 || stored.signum() <= 0) {
+            return BigInteger.ZERO;
         }
-        long outputPerSecond = saturatingMultiply(output, 20L);
-        return (stored + outputPerSecond - 1L) / outputPerSecond;
+        BigInteger outputPerSecond = output.multiply(BigInteger.valueOf(20L));
+        return stored.add(outputPerSecond).subtract(BigInteger.ONE).divide(outputPerSecond);
     }
 
-    public long getConnectedLoadEuPerTick() {
-        long result = 0L;
+    public BigInteger getConnectedLoadEuPerTick() {
+        BigInteger result = BigInteger.ZERO;
         for (WirelessTarget target : connections.values()) {
-            result = saturatingAdd(result, saturatingMultiply(target.voltage, target.amperage));
+            result = result.add(BigInteger.valueOf(target.voltage).multiply(BigInteger.valueOf(target.amperage)));
         }
         for (WirelessRemoteTarget target : remoteConnections.values()) {
-            result = saturatingAdd(result, saturatingMultiply(target.voltage, target.amperage));
+            result = result.add(BigInteger.valueOf(target.voltage).multiply(BigInteger.valueOf(target.amperage)));
         }
         return result;
     }
@@ -469,7 +489,6 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
             return;
         }
         List<WirelessRemoteTarget> additions = new ArrayList<>();
-        long addedLoad = 0L;
         for (LinkCardItem.PendingTarget entry : pending) {
             World targetWorld = DimensionManager.getWorld(entry.dimension);
             if (targetWorld == null || !targetWorld.isBlockLoaded(entry.pos)) {
@@ -492,12 +511,6 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
             WirelessRemoteTarget remote = new WirelessRemoteTarget(entry.dimension, entry.pos, target.name,
                     target.kind, target.tier, target.voltage, target.amperage);
             additions.add(remote);
-            addedLoad = saturatingAdd(addedLoad, saturatingMultiply(remote.voltage, remote.amperage));
-        }
-        long outputLimit = saturatingMultiply(configuredOutputAmperage, getVoltage());
-        if (addedLoad > outputLimit - Math.min(outputLimit, getConnectedLoadEuPerTick())) {
-            player.sendMessage(new TextComponentTranslation("chat.wireless_eu.link_commit_capacity"));
-            return;
         }
         for (WirelessRemoteTarget remote : additions) {
             remoteConnections.put(remoteKey(remote.dimension, remote.pos), remote);
@@ -562,6 +575,86 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
             }
         }
         return false;
+    }
+
+    public enum AutoConnectStatus {
+        CONNECTED,
+        ALREADY,
+        NEEDS_UPGRADE,
+        TIER_TOO_HIGH,
+        NOT_TARGET,
+        NOT_OWNER
+    }
+
+    public static final class AutoConnectResult {
+        public final AutoConnectStatus status;
+        public final String targetName;
+
+        AutoConnectResult(AutoConnectStatus status, String targetName) {
+            this.status = status;
+            this.targetName = targetName;
+        }
+    }
+
+    public void handleBindingCardUse(EntityPlayer player, ItemStack card) {
+        if (!isOwner(player)) {
+            player.sendMessage(new TextComponentTranslation("chat.wireless_eu.binding_card_owner"));
+            return;
+        }
+        int dimension = getWorld().provider.getDimension();
+        EnergyBindingCardItem.Binding binding = EnergyBindingCardItem.getBinding(card);
+        if (binding != null && binding.dimension == dimension && binding.pos.equals(getPos())) {
+            player.sendMessage(new TextComponentTranslation("chat.wireless_eu.binding_card_bound").appendSibling(
+                    locationText(WirelessEuCommand.teleportCommand(getPos()),
+                            "chat.wireless_eu.broadcaster_location_hover", getPos())));
+            return;
+        }
+        boolean rebound = binding != null;
+        EnergyBindingCardItem.bind(card, dimension, getPos());
+        player.sendMessage(new TextComponentTranslation(rebound
+                        ? "chat.wireless_eu.binding_card_rebound" : "chat.wireless_eu.binding_card_bound")
+                .appendSibling(locationText(WirelessEuCommand.teleportCommand(getPos()),
+                        "chat.wireless_eu.broadcaster_location_hover", getPos())));
+    }
+
+    /**
+     * Connects one target of a player carrying a binding card. The connection is written exactly like a manual one,
+     * so the GUI, the load display and the migration keep treating it the same; the returned status tells the caller
+     * what to message and when to keep the target queued.
+     */
+    public AutoConnectResult autoConnectTarget(EntityPlayer player, World targetWorld, BlockPos targetPos) {
+        if (!isOwner(player)) {
+            return new AutoConnectResult(AutoConnectStatus.NOT_OWNER, null);
+        }
+        if (targetWorld == null || !targetWorld.isBlockLoaded(targetPos)) {
+            return new AutoConnectResult(AutoConnectStatus.NOT_TARGET, null);
+        }
+        int dimension = targetWorld.provider.getDimension();
+        boolean sameWorld = targetWorld == getWorld();
+        boolean inRange = sameWorld && isInRange(targetPos);
+        if (!inRange && !crossDimensionUnlocked) {
+            return new AutoConnectResult(AutoConnectStatus.NEEDS_UPGRADE, null);
+        }
+        if (remoteConnections.containsKey(remoteKey(dimension, targetPos))
+                || (sameWorld && connections.containsKey(targetPos.toLong()))) {
+            return new AutoConnectResult(AutoConnectStatus.ALREADY, null);
+        }
+        if (!isPotentialLinkTarget(targetWorld, targetPos)) {
+            return new AutoConnectResult(AutoConnectStatus.NOT_TARGET, null);
+        }
+        WirelessTarget target = findTarget(targetWorld, targetPos, false);
+        if (target == null) {
+            return new AutoConnectResult(AutoConnectStatus.TIER_TOO_HIGH, null);
+        }
+        if (inRange) {
+            connections.put(target.pos.toLong(), target);
+        } else {
+            remoteConnections.put(remoteKey(dimension, target.pos), new WirelessRemoteTarget(dimension, target.pos,
+                    target.name, target.kind, target.tier, target.voltage, target.amperage));
+        }
+        markDirty();
+        syncOpenTerminals();
+        return new AutoConnectResult(AutoConnectStatus.CONNECTED, target.name);
     }
 
     public void handleAction(EntityPlayerMP player, WirelessEuNetwork.ServerAction action,
@@ -663,14 +756,6 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
             if (refreshed != null) {
                 additions.add(refreshed);
             }
-        }
-        long addedLoad = 0L;
-        for (WirelessTarget target : additions) {
-            addedLoad = saturatingAdd(addedLoad, saturatingMultiply(target.voltage, target.amperage));
-        }
-        long outputLimit = saturatingMultiply(configuredOutputAmperage, getVoltage());
-        if (addedLoad > 0L && getConnectedLoadEuPerTick() > outputLimit - addedLoad) {
-            return WirelessEuNetwork.ConnectionRejection.OUTPUT_FULL;
         }
         for (WirelessTarget target : additions) {
             connections.put(target.pos.toLong(), target);
@@ -785,8 +870,8 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
                     WirelessEuNetwork.ConnectionRejection.MIGRATION_WIRELESS_UPGRADE_REQUIRED);
             return;
         }
-        long stored = getEnergyStored();
-        if (stored > destination.getEnergyCapacity() - destination.getEnergyStored()) {
+        BigInteger stored = getStoredEu();
+        if (stored.compareTo(destination.getCapacityEu().subtract(destination.getStoredEu())) > 0) {
             player.sendMessage(new TextComponentTranslation("chat.wireless_eu.migration_capacity"));
             return;
         }
@@ -794,9 +879,9 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         destination.remoteConnections.putAll(remoteConnections);
         destination.upgradeCircuits.addAll(copyCircuits());
         destination.crossDimensionUnlocked |= crossDimensionUnlocked;
-        if (stored > 0L) {
-            destination.energyContainer.changeEnergy(stored);
-            energyContainer.changeEnergy(-stored);
+        if (stored.signum() > 0) {
+            ((AmplifyingLaserContainer) destination.energyContainer).changeEnergy(stored);
+            ((AmplifyingLaserContainer) energyContainer).changeEnergy(stored.negate());
         }
         connections.clear();
         remoteConnections.clear();
@@ -843,7 +928,7 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         }
     }
 
-    private static TextComponentString locationText(String command, String hoverKey, BlockPos pos) {
+    public static TextComponentString locationText(String command, String hoverKey, BlockPos pos) {
         TextComponentString location = new TextComponentString(
                 "[" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + "]");
         location.setStyle(new Style()
@@ -943,10 +1028,17 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         return energyContainer == null ? 0L : energyContainer.getEnergyCapacity();
     }
 
+    public BigInteger getStoredEu() {
+        return energyContainer == null ? BigInteger.ZERO : ((AmplifyingLaserContainer) energyContainer).getStoredEu();
+    }
+
+    public BigInteger getCapacityEu() {
+        return AmplifyingLaserContainer.CAPACITY;
+    }
+
     @Override
     public NBTTagCompound writeToNBT(NBTTagCompound tag) {
         super.writeToNBT(tag);
-        tag.setInteger("ConfiguredOutputAmperage", configuredOutputAmperage);
         tag.setInteger("RoundRobinIndex", roundRobinIndex);
         tag.setBoolean("CrossDimensionUnlocked", crossDimensionUnlocked);
         if (ownerUuid != null) {
@@ -973,8 +1065,6 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
-        configuredOutputAmperage = Math.max(1, Math.min(DEFAULT_OUTPUT_AMPERAGE,
-                tag.getInteger("ConfiguredOutputAmperage")));
         roundRobinIndex = Math.max(0, tag.getInteger("RoundRobinIndex"));
         ownerUuid = tag.hasUniqueId("Owner") ? tag.getUniqueId("Owner") : null;
         crossDimensionUnlocked = tag.getBoolean("CrossDimensionUnlocked");
@@ -1076,17 +1166,6 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         return dimension + ":" + pos.toLong();
     }
 
-    private static long saturatingAdd(long left, long right) {
-        return right > 0L && left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
-    }
-
-    private static long saturatingMultiply(long left, long right) {
-        if (left <= 0L || right <= 0L) {
-            return 0L;
-        }
-        return left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
-    }
-
     public static String tierName(int tier) {
         return tier >= 0 && tier < GTValues.VN.length ? GTValues.VN[tier] : "T" + tier;
     }
@@ -1095,38 +1174,40 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         return String.format(Locale.ROOT, "%,d", value);
     }
 
-    public static String formatCompactEu(long value) {
-        for (int index = COMPACT_EU_DIVISORS.length - 1; index > 0; index--) {
-            long divisor = COMPACT_EU_DIVISORS[index];
-            if (value >= divisor) {
-                long whole = value / divisor;
-                long hundredths = value % divisor * 100L / divisor;
-                if (hundredths == 0L) {
-                    return whole + COMPACT_EU_SUFFIXES[index];
-                }
-                if (hundredths % 10L == 0L) {
-                    return whole + "." + hundredths / 10L + COMPACT_EU_SUFFIXES[index];
-                }
-                return whole + "." + (hundredths < 10L ? "0" : "") + hundredths + COMPACT_EU_SUFFIXES[index];
-            }
-        }
-        return Long.toString(value);
+    public static String formatEu(BigInteger value) {
+        return String.format(Locale.ROOT, "%,d", value);
     }
 
-    public static String formatAmperageLoad(long euPerTick, long sourceVoltage) {
-        if (sourceVoltage <= 0L || euPerTick <= 0L) {
+    public static String formatCompactEu(long value) {
+        return formatCompactEu(BigInteger.valueOf(value));
+    }
+
+    public static String formatCompactEu(BigInteger value) {
+        int exponent = Math.max(0, value.abs().toString().length() - 1);
+        int index = Math.min(exponent / 3, COMPACT_EU_SUFFIXES.length - 1);
+        if (exponent >= COMPACT_EU_SUFFIXES.length * 3) {
+            return new BigDecimal(value).movePointLeft(exponent).setScale(2, RoundingMode.DOWN)
+                    .stripTrailingZeros().toPlainString() + "e" + exponent;
+        }
+        return new BigDecimal(value).movePointLeft(index * 3).setScale(2, RoundingMode.DOWN)
+                .stripTrailingZeros().toPlainString() + COMPACT_EU_SUFFIXES[index];
+    }
+
+    public static String formatAmperageLoad(BigInteger euPerTick, long sourceVoltage) {
+        if (sourceVoltage <= 0L || euPerTick.signum() <= 0) {
             return "0A";
         }
-        String amperage = BigDecimal.valueOf(euPerTick)
+        String amperage = new BigDecimal(euPerTick)
                 .divide(BigDecimal.valueOf(sourceVoltage), 2, RoundingMode.HALF_UP)
                 .stripTrailingZeros().toPlainString();
-        return amperage + "A";
+        return (new BigDecimal(amperage).compareTo(BigDecimal.valueOf(1000L)) < 0
+                ? amperage : formatCompactEu(new BigDecimal(amperage).toBigInteger())) + "A";
     }
 
-    public static String formatInputEquivalent(long euPerTick) {
+    public static String formatInputEquivalent(BigInteger euPerTick) {
         int tier = -1;
         for (int index = 0; index < GTValues.V.length; index++) {
-            if (GTValues.V[index] > euPerTick) {
+            if (BigInteger.valueOf(GTValues.V[index]).compareTo(euPerTick) > 0) {
                 break;
             }
             tier = index;
@@ -1134,24 +1215,25 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         if (tier < 0) {
             return "0A";
         }
-        String amperage = BigDecimal.valueOf(euPerTick)
+        String amperage = new BigDecimal(euPerTick)
                 .divide(BigDecimal.valueOf(GTValues.V[tier]), 2, RoundingMode.DOWN)
                 .stripTrailingZeros().toPlainString();
-        return amperage + "A " + tierName(tier) + "/t";
+        return (new BigDecimal(amperage).compareTo(BigDecimal.valueOf(1000L)) < 0
+                ? amperage : formatCompactEu(new BigDecimal(amperage).toBigInteger())) + "A " + tierName(tier) + "/t";
     }
 
-    public static String formatDuration(long seconds) {
-        if (seconds < 0L) {
+    public static String formatDuration(BigInteger seconds) {
+        if (seconds.signum() < 0) {
             return I18n.format("gui.wireless_eu.duration_none");
         }
-        if (seconds == 0L) {
+        if (seconds.signum() == 0) {
             return I18n.format("gui.wireless_eu.duration_zero");
         }
-        long hours = seconds / 3600L;
-        long minutes = seconds % 3600L / 60L;
-        long remainingSeconds = seconds % 60L;
-        if (hours > 0L) {
-            return I18n.format("gui.wireless_eu.duration_hours", hours, minutes);
+        BigInteger hours = seconds.divide(BigInteger.valueOf(3600L));
+        long minutes = seconds.remainder(BigInteger.valueOf(3600L)).longValue() / 60L;
+        long remainingSeconds = seconds.remainder(BigInteger.valueOf(60L)).longValue();
+        if (hours.signum() > 0) {
+            return I18n.format("gui.wireless_eu.duration_hours", formatCompactEu(hours), minutes);
         }
         if (minutes > 0L) {
             return I18n.format("gui.wireless_eu.duration_minutes", minutes, remainingSeconds);
@@ -1162,18 +1244,15 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
     private static final class BroadcastTarget {
         private final World world;
         private final BlockPos pos;
-        private final long amperage;
 
         private BroadcastTarget(World world, WirelessTarget target) {
             this.world = world;
             this.pos = target.pos;
-            this.amperage = target.amperage;
         }
 
         private BroadcastTarget(World world, WirelessRemoteTarget target) {
             this.world = world;
             this.pos = target.pos;
-            this.amperage = target.amperage;
         }
     }
 
