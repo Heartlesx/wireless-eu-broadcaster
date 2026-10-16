@@ -12,9 +12,12 @@ import gregtech.api.recipes.RecipeBuilder;
 import gregtech.api.recipes.RecipeMap;
 import gregtech.common.metatileentities.MetaTileEntities;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.EnumDyeColor;
 import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.item.crafting.ShapedRecipes;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.EnumFacing;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.crafting.IShapedRecipe;
@@ -53,7 +56,12 @@ public final class WirelessEuMachines {
         }
         registered = true;
         registry = MTEManager.getInstance().createRegistry(WirelessEuMod.MOD_ID);
-        registry.setBlock(new gregtech.api.block.machines.BlockMachine());
+        registry.setBlock(new gregtech.api.block.machines.BlockMachine() {
+            @Override
+            public boolean recolorBlock(World world, BlockPos pos, EnumFacing side, EnumDyeColor color) {
+                return false;
+            }
+        });
         for (int index = 0; index < TIERS.length; index++) {
             int tier = TIERS[index];
             ResourceLocation id = new ResourceLocation(WirelessEuMod.MOD_ID,

@@ -1,7 +1,11 @@
 package com.wirelesseu.machine;
 
 import codechicken.lib.raytracer.CuboidRayTraceResult;
+import codechicken.lib.render.CCRenderState;
+import codechicken.lib.render.pipeline.IVertexOperation;
+import codechicken.lib.vec.Matrix4;
 import com.wirelesseu.WirelessEuMod;
+import com.wirelesseu.client.WirelessEuBroadcasterRenderer;
 import com.wirelesseu.command.WirelessEuCommand;
 import com.wirelesseu.gui.WirelessEuContainer;
 import com.wirelesseu.gui.WirelessEuGuiHandler;
@@ -23,6 +27,7 @@ import gregtech.common.pipelike.cable.net.EnergyNetWalker;
 import gregtech.common.pipelike.cable.net.EnergyRoutePath;
 import gregtech.common.pipelike.cable.tile.TileEntityCable;
 import net.minecraft.client.resources.I18n;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -45,6 +50,9 @@ import net.minecraft.util.text.event.HoverEvent;
 import net.minecraft.world.World;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.oredict.OreDictionary;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
+import org.apache.commons.lang3.tuple.Pair;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -65,7 +73,7 @@ import java.util.UUID;
 
 /**
  * GT 1.12.2 implementation of the Wireless EU broadcaster. It deliberately uses GT's MetaTileEntity lifecycle so
- * the block keeps the battery-buffer casing and GT's EU/laser capability conventions.
+ * the block keeps GT's EU/laser capability conventions with its own broadcaster casing.
  */
 public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuffer {
     public static final int RANGE = 384;
@@ -98,6 +106,39 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
     @Override
     public MetaTileEntity createMetaTileEntity(IGregTechTileEntity holder) {
         return new WirelessEuBroadcasterMachine(metaTileEntityId, tier);
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public void renderMetaTileEntity(CCRenderState renderState, Matrix4 translation, IVertexOperation[] pipeline) {
+        WirelessEuBroadcasterRenderer.render(tier, getFrontFacing(), renderState, translation, pipeline);
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public Pair<TextureAtlasSprite, Integer> getParticleTexture() {
+        return Pair.of(WirelessEuBroadcasterRenderer.particle(tier), 0xFFFFFF);
+    }
+
+    @Override
+    public void setPaintingColor(int color) {
+        // Broadcaster tier colors are fixed, including when a tool or integration calls this directly.
+    }
+
+    @Override
+    public int getPaintingColor() {
+        return -1;
+    }
+
+    @Override
+    public boolean isPainted() {
+        return false;
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public int getPaintingColorForRendering() {
+        return 0xFFFFFF;
     }
 
     @Override
@@ -443,6 +484,18 @@ public final class WirelessEuBroadcasterMachine extends MetaTileEntityBatteryBuf
         } else {
             player.sendMessage(new TextComponentTranslation("chat.wireless_eu.upgrade_owner"));
         }
+    }
+
+    /**
+     * GT collects machine contents here from {@code BlockMachine#getDrops}, which is the only place the machine item
+     * itself is produced, so the circuits are returned exactly when the broadcaster drops. Wiring this to
+     * {@code BlockEvent.BreakEvent} instead loses them on every break that does not go through the vanilla
+     * player-break flow (tools and mods that remove the block and run the drop pipeline themselves).
+     */
+    @Override
+    public void getDrops(List<ItemStack> itemDrops, EntityPlayer player) {
+        super.getDrops(itemDrops, player);
+        addUpgradeCircuitDrops(itemDrops);
     }
 
     public void addUpgradeCircuitDrops(List<ItemStack> drops) {

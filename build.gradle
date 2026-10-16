@@ -51,6 +51,8 @@ dependencies {
     compileOnly files('libs/gregtech-1.12.2-2901.jar')
     // GT 的 MetaTileEntity#onRightClick 签名带 codechicken.lib 类型，只用于编译期。
     compileOnly files('libs/CodeChickenLib-1.12.2-3.2.3.358-universal.jar')
+    // BlockMachine's facade interface is needed when overriding its recolor hook.
+    compileOnly files('libs/CTM-MC1.12.2-1.0.2.31.jar')
     compileOnly files('libs/gtlitecore-1.0.0.jar')
     compileOnly files('libs/modularui-3.0.6.jar')
     compileOnly files('libs/theoneprobe-1.12-1.4.28.jar')
@@ -86,3 +88,12 @@ jar.finalizedBy('reobfJar')
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
 }
+
+sourceSets.test.compileClasspath += configurations.compileOnly
+
+task broadcasterRenderSelfCheck(type: JavaExec, dependsOn: testClasses) {
+    main = 'com.wirelesseu.client.BroadcasterRenderSelfCheck'
+    classpath = sourceSets.test.runtimeClasspath + configurations.compileOnly
+    jvmArgs '-Djava.awt.headless=true'
+}
+check.dependsOn broadcasterRenderSelfCheck

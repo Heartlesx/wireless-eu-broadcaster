@@ -21,6 +21,7 @@ public final class WirelessEuModels {
 
     public static void register() {
         MinecraftForge.EVENT_BUS.register(WirelessEuModels.class);
+        MinecraftForge.EVENT_BUS.register(WirelessEuBroadcasterRenderer.class);
     }
 
     @SubscribeEvent

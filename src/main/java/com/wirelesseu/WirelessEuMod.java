@@ -15,9 +15,6 @@ import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
-import net.minecraftforge.event.world.BlockEvent;
-import net.minecraft.entity.item.EntityItem;
-import net.minecraft.item.ItemStack;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
@@ -38,7 +35,7 @@ import org.apache.logging.log4j.Logger;
         dependencies = "required-after:gregtech;required-after:gtlitecore;after:theoneprobe")
 public final class WirelessEuMod {
     public static final String MOD_ID = "wireless_eu";
-    public static final String VERSION = "2.1.4-dev.6-forge-1.12.2";
+    public static final String VERSION = "2.1.4-dev.9-forge-1.12.2";
     public static boolean enableEnergyAmplification = true;
     public static boolean enableAutoConnect = true;
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
@@ -129,22 +126,5 @@ public final class WirelessEuMod {
 
     public static WirelessEuBroadcasterMachine getMachine(World world, BlockPos pos) {
         return WirelessEuMachines.getMachine(world, pos);
-    }
-
-    @net.minecraftforge.fml.common.eventhandler.SubscribeEvent
-    public void onBreak(BlockEvent.BreakEvent event) {
-        if (event.getWorld().isRemote) {
-            return;
-        }
-        WirelessEuBroadcasterMachine machine = WirelessEuMachines.getMachine(event.getWorld(), event.getPos());
-        if (machine == null) {
-            return;
-        }
-        java.util.List<ItemStack> drops = new java.util.ArrayList<>();
-        machine.addUpgradeCircuitDrops(drops);
-        for (ItemStack stack : drops) {
-            event.getWorld().spawnEntity(new EntityItem(event.getWorld(), event.getPos().getX() + 0.5D,
-                    event.getPos().getY() + 0.5D, event.getPos().getZ() + 0.5D, stack));
-        }
     }
 }
