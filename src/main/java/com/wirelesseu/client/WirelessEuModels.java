@@ -26,8 +26,6 @@ public final class WirelessEuModels {
 
     @SubscribeEvent
     public static void registerModels(ModelRegistryEvent event) {
-        ModelLoader.setCustomModelResourceLocation(WirelessEuItems.LINK_CARD, 0,
-                new ModelResourceLocation(new ResourceLocation(WirelessEuMod.MOD_ID, "link_card"), "inventory"));
         ModelLoader.setCustomModelResourceLocation(WirelessEuItems.ENERGY_BINDING_CARD, 0,
                 new ModelResourceLocation(new ResourceLocation(WirelessEuMod.MOD_ID, "energy_binding_card"), "inventory"));
     }

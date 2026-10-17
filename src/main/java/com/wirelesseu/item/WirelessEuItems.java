@@ -13,7 +13,6 @@ import net.minecraft.init.Items;
 import com.wirelesseu.WirelessEuMod;
 
 public final class WirelessEuItems {
-    public static LinkCardItem LINK_CARD;
     public static EnergyBindingCardItem ENERGY_BINDING_CARD;
     private static boolean registered;
 
@@ -29,10 +28,6 @@ public final class WirelessEuItems {
 
     @SubscribeEvent
     public static void registerItems(RegistryEvent.Register<Item> event) {
-        if (LINK_CARD == null) {
-            LINK_CARD = new LinkCardItem();
-            event.getRegistry().register(LINK_CARD);
-        }
         if (ENERGY_BINDING_CARD == null) {
             ENERGY_BINDING_CARD = new EnergyBindingCardItem();
             event.getRegistry().register(ENERGY_BINDING_CARD);
@@ -41,14 +36,12 @@ public final class WirelessEuItems {
 
     @SubscribeEvent
     public static void registerRecipes(RegistryEvent.Register<IRecipe> event) {
-        if (LINK_CARD == null) {
+        if (ENERGY_BINDING_CARD == null) {
             return;
         }
-        ResourceLocation linkCardId = new ResourceLocation(WirelessEuMod.MOD_ID, "link_card");
-        event.getRegistry().register(new ShapedOreRecipe(linkCardId, new ItemStack(LINK_CARD),
+        ResourceLocation bindingCardId = new ResourceLocation(WirelessEuMod.MOD_ID, "energy_binding_card");
+        event.getRegistry().register(new ShapedOreRecipe(bindingCardId, new ItemStack(ENERGY_BINDING_CARD),
                 "DED", "EEE", "GSG", 'D', Items.DIAMOND, 'E', Items.ENDER_EYE,
-                'G', Items.EMERALD, 'S', Items.STICK).setRegistryName(linkCardId));
-        event.getRegistry().register(new ClearLinkCardRecipe().setRegistryName(
-                new ResourceLocation(WirelessEuMod.MOD_ID, "clear_link_card")));
+                'G', Items.EMERALD, 'S', Items.STICK).setRegistryName(bindingCardId));
     }
 }
