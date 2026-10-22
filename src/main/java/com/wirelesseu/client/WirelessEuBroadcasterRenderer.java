@@ -32,6 +32,7 @@ public final class WirelessEuBroadcasterRenderer {
     private static final TextureAtlasSprite[][] SPRITES = new TextureAtlasSprite[GTValues.MAX + 1][6];
     private static final ThreadLocal<BlockFace> FACE = ThreadLocal.withInitial(BlockFace::new);
     private static TextureAtlasSprite emissive;
+    private static TextureAtlasSprite boltEmissive;
 
     private WirelessEuBroadcasterRenderer() {
     }
@@ -48,6 +49,8 @@ public final class WirelessEuBroadcasterRenderer {
         }
         emissive = event.getMap().registerSprite(new ResourceLocation(
                 WirelessEuMod.MOD_ID, "blocks/broadcaster/front_emissive"));
+        boltEmissive = event.getMap().registerSprite(new ResourceLocation(
+                WirelessEuMod.MOD_ID, "blocks/broadcaster/bolt_emissive"));
     }
 
     public static TextureAtlasSprite particle(int tier) {
@@ -69,8 +72,10 @@ public final class WirelessEuBroadcasterRenderer {
             EnumFacing localSide = BroadcasterOrientation.localSide(side, front);
             draw(face, SPRITES[tier][localSide.getIndex()], BlockRenderLayer.CUTOUT_MIPPED,
                     state, translation, pipeline, cubeState);
-            if (side == front && ConfigHolder.client.machinesEmissiveTextures) {
-                draw(face, emissive, BloomEffectUtil.getEffectiveBloomLayer(), state, translation,
+            TextureAtlasSprite glow = localSide == EnumFacing.NORTH ? emissive
+                    : localSide == EnumFacing.DOWN ? null : boltEmissive;
+            if (glow != null && ConfigHolder.client.machinesEmissiveTextures) {
+                draw(face, glow, BloomEffectUtil.getEffectiveBloomLayer(), state, translation,
                         ArrayUtils.add(pipeline, new LightMapOperation(240, 240)), cubeState);
             }
         }

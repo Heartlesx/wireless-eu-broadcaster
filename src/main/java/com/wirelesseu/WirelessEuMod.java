@@ -35,7 +35,7 @@ import org.apache.logging.log4j.Logger;
         dependencies = "required-after:gregtech;required-after:gtlitecore;after:theoneprobe")
 public final class WirelessEuMod {
     public static final String MOD_ID = "wireless_eu";
-    public static final String VERSION = "2.1.4-dev.10-forge-1.12.2";
+    public static final String VERSION = "2.1.4-dev.12-forge-1.12.2";
     public static boolean enableEnergyAmplification = true;
     public static boolean enableAutoConnect = true;
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);

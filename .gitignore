@@ -10,3 +10,9 @@ logs/
 
 # Third party mod jars copied from the target modpack (not redistributed here)
 libs/*.jar
+
+# Python bytecode from the local texture tools
+__pycache__/
+
+# Scratch dumps
+.tmp_javap/

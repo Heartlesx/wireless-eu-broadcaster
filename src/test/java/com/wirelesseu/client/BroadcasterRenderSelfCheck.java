@@ -10,6 +10,9 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.HashSet;
 import java.util.Set;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.security.MessageDigest;
 
 /** Headless checks against CCL's face UV convention; no Minecraft or OpenGL session is started. */
 public final class BroadcasterRenderSelfCheck {
@@ -40,7 +43,7 @@ public final class BroadcasterRenderSelfCheck {
         }
         checkTextures();
         System.out.println("Broadcaster self-check: 6 orientations, " + corners
-                + " UV corners, 70 opaque 32x32 faces, shared emissive alignment passed.");
+                + " UV corners, 70 opaque 16x16 faces, approved v05 artwork and 2 emissive masks passed.");
     }
 
     private static Vertex5 rotate(Vertex5 vertex, EnumFacing front) {
@@ -67,28 +70,51 @@ public final class BroadcasterRenderSelfCheck {
     private static void checkTextures() throws Exception {
         File root = new File("src/main/resources/assets/wireless_eu/textures/blocks/broadcaster");
         BufferedImage mask = ImageIO.read(new File(root, "front_emissive.png"));
-        require(mask.getWidth() == 32 && mask.getHeight() == 32, "Wrong mask dimensions");
-        int lit = 0;
-        for (int y = 0; y < 32; y++) {
-            for (int x = 0; x < 32; x++) {
-                if ((mask.getRGB(x, y) >>> 24) != 0) lit++;
+        BufferedImage boltMask = ImageIO.read(new File(root, "bolt_emissive.png"));
+        checkMask(mask);
+        checkMask(boltMask);
+        int approvedCount = 0;
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        for (String entry : Files.readAllLines(new File("src/test/resources/broadcaster-v05-sha256.txt").toPath(),
+                StandardCharsets.UTF_8)) {
+            String expected = entry.substring(0, 64);
+            File image = new File(root, entry.substring(66));
+            StringBuilder actual = new StringBuilder();
+            for (byte value : digest.digest(Files.readAllBytes(image.toPath()))) {
+                actual.append(String.format("%02x", value & 0xFF));
             }
+            require(expected.equals(actual.toString()), "Does not match approved v05: " + image);
+            approvedCount++;
         }
-        require(lit > 0 && lit < 100, "Emissive region must stay small");
+        require(approvedCount == 70, "Incomplete approved face set");
         for (String tier : TIERS) {
             for (String side : new String[]{"front", "top", "side", "rear", "bottom"}) {
                 BufferedImage image = ImageIO.read(new File(root, tier + "/" + side + ".png"));
-                require(image.getWidth() == 32 && image.getHeight() == 32, "Wrong dimensions: " + tier + "/" + side);
-                for (int y = 0; y < 32; y++) {
-                    for (int x = 0; x < 32; x++) {
+                require(image.getWidth() == 16 && image.getHeight() == 16, "Wrong dimensions: " + tier + "/" + side);
+                BufferedImage glow = side.equals("front") ? mask : side.equals("bottom") ? null : boltMask;
+                for (int y = 0; y < 16; y++) {
+                    for (int x = 0; x < 16; x++) {
                         require((image.getRGB(x, y) >>> 24) == 255, "Transparent casing: " + tier + "/" + side);
-                        if (side.equals("front") && (mask.getRGB(x, y) >>> 24) != 0) {
-                            require(image.getRGB(x, y) == mask.getRGB(x, y), "Emissive mismatch: " + tier);
+                        if (glow != null && (glow.getRGB(x, y) >>> 24) != 0) {
+                            require(image.getRGB(x, y) == glow.getRGB(x, y), "Emissive mismatch: " + tier + "/" + side);
                         }
                     }
                 }
             }
         }
+    }
+
+    private static void checkMask(BufferedImage mask) {
+        require(mask.getWidth() == 16 && mask.getHeight() == 16, "Wrong mask dimensions");
+        int lit = 0;
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                int alpha = mask.getRGB(x, y) >>> 24;
+                require(alpha == 0 || alpha == 255, "Antialiased mask pixel");
+                if (alpha != 0) lit++;
+            }
+        }
+        require(lit > 0 && lit < 64, "Emissive region must stay small");
     }
 
     private static void require(boolean condition, String message) {
