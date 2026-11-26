@@ -19,6 +19,10 @@ sourceSets {
         java.setSrcDirs(['../src/main/java'])
         resources.setSrcDirs(['../src/main/resources'])
     }
+    test {
+        java.setSrcDirs(['../src/test/java'])
+        resources.setSrcDirs(['../src/test/resources'])
+    }
 }
 
 minecraft {
@@ -96,4 +100,15 @@ tasks.named('jar', Jar).configure {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+}
+
+tasks.register('broadcasterTextureSelfCheck', JavaExec) {
+    dependsOn 'testClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.wirelesseu.client.BroadcasterTextureSelfCheck'
+    jvmArgs '-Djava.awt.headless=true'
+}
+
+tasks.named('check') {
+    dependsOn 'broadcasterTextureSelfCheck'
 }

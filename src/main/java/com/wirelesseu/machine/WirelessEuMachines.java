@@ -39,8 +39,8 @@ public final class WirelessEuMachines {
             BROADCASTERS[tier] = REGISTRATE.machine(id, holder -> new WirelessEuBroadcasterMachine(holder, tier))
                     .tier(tier)
                     .rotationState(RotationState.ALL)
-                    // This pack initializes GTMachineModels after addon constructors. Static resources below supply
-                    // the battery-buffer model without forcing that registry during mod construction.
+                    // Models are static resources: the six broadcaster faces are declared in
+                    // assets/wireless_eu/models/block/machine/<tier>_wireless_eu_broadcaster.json.
                     .blockModel((context, provider) -> {
                     })
                     .appearanceBlock(() -> appearanceBlock(tier))
