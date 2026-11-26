@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.1.4-forge-1.20.1
+
+Synchronises the 1.20.1 build with the 1.12.2 2.1.4-dev.12 feature line and targets the Sky of Grind pack.
+
+### Compatibility
+
+- Compiled against Forge 47.4.3 and GTCEu 7.4.1; `mods.toml` now accepts `[47.4.3,)` / `[7.4.1,)`, so the same jar also loads on Monifactory (47.4.13 / 7.5.3).
+- Network protocol raised to 10.
+
+### New features
+
+- **Energy Binding Card**: sneak-right-click a broadcaster to bind, then every compatible GT machine the carrying player places is connected automatically. Targets placed while the broadcaster chunk is unloaded, while a same-tier broadcaster is in range, or before the cross-dimension upgrade are queued (64 per card) and committed automatically.
+- **Big EU buffer**: `2^126 - 1` EU through a big-integer container, with unlimited output amperage.
+- **14 tiers**: UIV, UXV and OpV added, matching 1.12.2.
+- **Server config**: `enableEnergyAmplification` (2.5x / 1x) and `enableAutoConnect`, both restart-scoped.
+- **Laser input**: the broadcaster accepts normal EU and GT laser energy.
+- **Migration parity**: circuits, unlock state, EU and connections move to the higher broadcaster; the destination must be owned by the requesting player.
+- **Artwork**: 14 tiers x 5 faces (70 textures) with six-face block models and blockstate rotation.
+- **Jade**: tier, amplified input rate, local/remote connection counts, buffer percentage and ETAs.
+
+### Fixes
+
+- Upgrade circuits are returned by `IMachineLife#onMachineRemoved`, so wands, building gadgets and chain breaks no longer lose them.
+- Auto-connect also enforces the "one same-tier broadcaster per range" rule and queues the target on conflict.
+- Broadcaster targets reject `gtmthings` wireless energy/laser hatches to prevent amplification loops.
+- Client state is keyed by dimension + position; the connected list no longer requires a scan first.
+- Depletion time shows "Infinite" while the buffer grows or no target is connected.
+- The full-test broadcaster only appears in GTCEu's Machine creative tab.
+
+### Incompatible changes
+
+- **Link Card removed** (`wireless_eu:link_card`, its recipe, model, language keys and clear-card recipe). The Energy Binding Card inherits its recipe.
+- The fixed 65,536A output limit and `SET_OUTPUT_AMPERAGE` action are gone; output is limited only by the targets.
+- Teleport commands only accept coordinates the server handed to that player within the last five minutes.
+
 ## 2.0.1
 
 - Added a server-side right-click fallback for tagged circuit upgrades and aligned tag lookup with Forge's live item registry.

@@ -655,7 +655,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
     }
 
     private String dimensionMarker(ResourceLocation dimension) {
-        String key = "dimension." + dimension.getNamespace() + "." + dimension.getPath();
+        String key = "gui.wireless_eu.dimension." + dimension.getNamespace() + "." + dimension.getPath();
         String name = Component.translatable(key).getString();
         if (name.equals(key) || name.isBlank()) {
             name = dimension.getPath();
