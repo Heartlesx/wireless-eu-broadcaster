@@ -17,6 +17,8 @@ import snownee.jade.api.IWailaPlugin;
 import snownee.jade.api.WailaPlugin;
 import snownee.jade.api.config.IPluginConfig;
 
+import java.math.BigInteger;
+
 @WailaPlugin(WirelessEuMod.MOD_ID)
 public final class WirelessEuJadePlugin implements IWailaPlugin {
     private static final BroadcasterProvider PROVIDER = new BroadcasterProvider();
@@ -35,7 +37,10 @@ public final class WirelessEuJadePlugin implements IWailaPlugin {
         private static final String KEY_IS_BROADCASTER = "WirelessEuBroadcaster";
         private static final String KEY_STORED = "StoredEu";
         private static final String KEY_CAPACITY = "CapacityEu";
-        private static final String KEY_CONNECTIONS = "Connections";
+        private static final String KEY_TIER = "Tier";
+        private static final String KEY_INPUT = "InputEuPerSecond";
+        private static final String KEY_LOCAL_CONNECTIONS = "LocalConnections";
+        private static final String KEY_REMOTE_CONNECTIONS = "RemoteConnections";
         private static final String KEY_ETA = "FillEta";
         private static final String KEY_DEPLETION_ETA = "DepletionEta";
 
@@ -51,11 +56,14 @@ public final class WirelessEuJadePlugin implements IWailaPlugin {
                 return;
             }
             data.putBoolean(KEY_IS_BROADCASTER, true);
-            data.putLong(KEY_STORED, broadcaster.energyContainer.getEnergyStored());
-            data.putLong(KEY_CAPACITY, broadcaster.energyContainer.getEnergyCapacity());
-            data.putLong(KEY_CONNECTIONS, broadcaster.getConnections().size());
-            data.putLong(KEY_ETA, broadcaster.getFillTimeSeconds());
-            data.putLong(KEY_DEPLETION_ETA, broadcaster.getDepletionTimeSeconds());
+            data.putString(KEY_STORED, broadcaster.getStoredEu().toString());
+            data.putString(KEY_CAPACITY, broadcaster.getCapacityEu().toString());
+            data.putInt(KEY_TIER, broadcaster.getTier());
+            data.putString(KEY_INPUT, broadcaster.getInputPerSecond().toString());
+            data.putInt(KEY_LOCAL_CONNECTIONS, broadcaster.getConnections().size());
+            data.putInt(KEY_REMOTE_CONNECTIONS, broadcaster.getRemoteConnections().size());
+            data.putString(KEY_ETA, broadcaster.getFillTimeSeconds().toString());
+            data.putString(KEY_DEPLETION_ETA, broadcaster.getDepletionTimeSeconds().toString());
         }
 
         @Override
@@ -64,13 +72,37 @@ public final class WirelessEuJadePlugin implements IWailaPlugin {
             if (!data.getBoolean(KEY_IS_BROADCASTER)) {
                 return;
             }
-            tooltip.add(Component.literal("连接数量：" + data.getLong(KEY_CONNECTIONS)));
-            tooltip.add(Component.literal("EU 缓存：" + WirelessEuBroadcasterMachine.formatEu(data.getLong(KEY_STORED))
-                    + " / " + WirelessEuBroadcasterMachine.formatEu(data.getLong(KEY_CAPACITY))));
+            BigInteger stored = parse(data.getString(KEY_STORED));
+            BigInteger capacity = parse(data.getString(KEY_CAPACITY));
+            BigInteger inputPerSecond = parse(data.getString(KEY_INPUT));
+            tooltip.add(Component.literal("无线 EU 广播器：" + WirelessEuBroadcasterMachine.tierName(data.getInt(KEY_TIER))));
+            tooltip.add(Component.literal("EU 缓存：" + WirelessEuBroadcasterMachine.formatEu(stored) + " / "
+                    + WirelessEuBroadcasterMachine.formatEu(capacity) + " (" + percent(stored, capacity) + ")"));
+            tooltip.add(Component.literal("放大后输入："
+                    + WirelessEuBroadcasterMachine.formatCompactEu(inputPerSecond.divide(BigInteger.valueOf(20L)))
+                    + " EU/t"));
+            tooltip.add(Component.literal("连接数量：" + (data.getInt(KEY_LOCAL_CONNECTIONS)
+                    + data.getInt(KEY_REMOTE_CONNECTIONS)) + "（本地 " + data.getInt(KEY_LOCAL_CONNECTIONS)
+                    + " / 远程 " + data.getInt(KEY_REMOTE_CONNECTIONS) + "）"));
             tooltip.add(Component.literal("充满所需时间："
-                    + WirelessEuBroadcasterMachine.formatDuration(data.getLong(KEY_ETA))));
+                    + WirelessEuBroadcasterMachine.formatDuration(parse(data.getString(KEY_ETA)))));
             tooltip.add(Component.literal("预计耗尽时间："
-                    + WirelessEuBroadcasterMachine.formatDuration(data.getLong(KEY_DEPLETION_ETA))));
+                    + WirelessEuBroadcasterMachine.formatDuration(parse(data.getString(KEY_DEPLETION_ETA)))));
+        }
+
+        private static String percent(BigInteger stored, BigInteger capacity) {
+            if (capacity.signum() <= 0) {
+                return "0%";
+            }
+            return stored.multiply(BigInteger.valueOf(100L)).divide(capacity) + "%";
+        }
+
+        private static BigInteger parse(String value) {
+            try {
+                return new BigInteger(value);
+            } catch (NumberFormatException exception) {
+                return BigInteger.ZERO;
+            }
         }
     }
 }

@@ -16,10 +16,12 @@ import net.minecraftforge.eventbus.api.IEventBus;
 public final class WirelessEuMachines {
     private static final int[] TIERS = {
             GTValues.LV, GTValues.MV, GTValues.HV, GTValues.EV, GTValues.IV,
-            GTValues.LuV, GTValues.ZPM, GTValues.UV, GTValues.UHV, GTValues.UEV, GTValues.MAX
+            GTValues.LuV, GTValues.ZPM, GTValues.UV, GTValues.UHV, GTValues.UEV,
+            GTValues.UIV, GTValues.UXV, GTValues.OpV, GTValues.MAX
     };
     private static final String[] IDS = {
-            "lv", "mv", "hv", "ev", "iv", "luv", "zpm", "uv", "uhv", "uev", "max"
+            "lv", "mv", "hv", "ev", "iv", "luv", "zpm", "uv", "uhv", "uev",
+            "uiv", "uxv", "opv", "max"
     };
 
     public static final GTRegistrate REGISTRATE = GTRegistrate.create(WirelessEuMod.MOD_ID);
@@ -41,7 +43,7 @@ public final class WirelessEuMachines {
                     // the battery-buffer model without forcing that registry during mod construction.
                     .blockModel((context, provider) -> {
                     })
-                    .appearanceBlock(() -> GTMachines.BATTERY_BUFFER_16[tier].getBlock())
+                    .appearanceBlock(() -> appearanceBlock(tier))
                     .tooltips(
                             Component.literal("无线 EU 广播器"),
                             Component.literal("同维度 384 格范围"),
@@ -51,6 +53,17 @@ public final class WirelessEuMachines {
     }
 
     private WirelessEuMachines() {
+    }
+
+    /** Packs can disable high-tier content; fall back to the highest available battery-buffer casing. */
+    private static net.minecraft.world.level.block.Block appearanceBlock(int tier) {
+        MachineDefinition[] buffers = GTMachines.BATTERY_BUFFER_16;
+        for (int candidate = Math.min(tier, buffers.length - 1); candidate >= 0; candidate--) {
+            if (buffers[candidate] != null) {
+                return buffers[candidate].getBlock();
+            }
+        }
+        throw new IllegalStateException("GTCEu registered no 16x battery buffer for the broadcaster appearance");
     }
 
     public static void register(IEventBus modBus) {
@@ -66,7 +79,13 @@ public final class WirelessEuMachines {
         for (int tier : TIERS) {
             MachineDefinition broadcaster = BROADCASTERS[tier];
             if (broadcaster != null && broadcaster.getItem() != null) {
-                event.accept(broadcaster.asStack());
+                net.minecraft.world.item.ItemStack stack = broadcaster.asStack();
+                event.accept(stack);
+                net.minecraft.world.item.ItemStack fullTest = broadcaster.asStack();
+                net.minecraft.nbt.CompoundTag tag = fullTest.getOrCreateTag();
+                tag.putBoolean("WirelessEuFullTest", true);
+                fullTest.setHoverName(Component.translatable("item.wireless_eu.full_test", stack.getHoverName()));
+                event.accept(fullTest);
             }
         }
     }

@@ -38,7 +38,6 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
     private Button disconnectButton;
     private Button rangePreviewButton;
     private Button migrationButton;
-    private Button dismissalButton;
     private Button unconnectedButton;
     private Button connectedButton;
     private EditBox searchBox;
@@ -65,7 +64,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         imageHeight = scaled(BASE_IMAGE_HEIGHT);
         super.init();
         scanButton = addRenderableWidget(Button.builder(Component.translatable("gui.wireless_eu.scan"), button ->
-                        WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.SCAN, 0, List.of()))
+                        WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.SCAN, List.of()))
                 .bounds(leftPos + 30, topPos + 32, 82, 18)
                 .build());
 
@@ -91,12 +90,12 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
 
         connectButton = addRenderableWidget(Button.builder(Component.translatable("gui.wireless_eu.connect"), button ->
                         WirelessEuNetwork.sendAction(menu.getPos(),
-                                WirelessEuNetwork.ServerAction.CONNECT_SELECTED, 0, selectedTargets))
+                                WirelessEuNetwork.ServerAction.CONNECT_SELECTED, selectedTargets))
                 .bounds(leftPos + 30, topPos + 272, 126, 18)
                 .build());
         disconnectButton = addRenderableWidget(Button.builder(Component.translatable("gui.wireless_eu.disconnect"),
                         button -> WirelessEuNetwork.sendAction(menu.getPos(),
-                                WirelessEuNetwork.ServerAction.DISCONNECT_SELECTED, 0, selectedTargets))
+                                WirelessEuNetwork.ServerAction.DISCONNECT_SELECTED, selectedTargets))
                 .bounds(leftPos + 162, topPos + 272, 138, 18)
                 .build());
         rangePreviewButton = addRenderableWidget(Button.builder(rangePreviewLabel(), button -> {
@@ -112,10 +111,6 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 })
                 .bounds(leftPos + 306, topPos + 32, 117, 18)
                 .build());
-        dismissalButton = addRenderableWidget(Button.builder(Component.literal("OK"), button -> dismissRejection())
-                .bounds(leftPos + 174, topPos + 162, 82, 20)
-                .build());
-                dismissalButton.visible = false;
         setPrimaryWidgetsVisible(true);
     }
 
@@ -218,14 +213,14 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
             if (pendingMigration != null) {
                 if (mouseX >= modalLeft + 15 && mouseX < modalLeft + 245
                         && mouseY >= modalTop + 68 && mouseY < modalTop + 102) {
-                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.LOCATE_BROADCASTER, 0,
+                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.LOCATE_BROADCASTER,
                             List.of(new WirelessEuNetwork.TargetReference(state().dimension(), pendingMigration.pos())));
                     playButtonClick();
                     return true;
                 }
                 if (mouseX >= modalLeft + 50 && mouseX < modalLeft + 125
                         && mouseY >= modalTop + 120 && mouseY < modalTop + 144) {
-                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.MIGRATE_TO_HIGHER, 0,
+                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.MIGRATE_TO_HIGHER,
                             List.of(new WirelessEuNetwork.TargetReference(state().dimension(), pendingMigration.pos())));
                     migrationMenu = false; pendingMigration = null; setPrimaryWidgetsVisible(true); playButtonClick(); return true;
                 }
@@ -257,7 +252,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
             if (index >= 0 && index < rows.size()) {
                 ClientBroadcasterState.TargetView target = rows.get(index).target();
                 if (mouseX >= leftPos + 263) {
-                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.LOCATE_TARGET, 0,
+                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.LOCATE_TARGET,
                             List.of(target.reference()));
                     playButtonClick();
                     return true;
@@ -334,7 +329,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
     private boolean handleTerminalClick(double mouseX, double mouseY) {
         if (mouseX >= leftPos + 28 && mouseX < leftPos + 110 && mouseY >= topPos + 10 && mouseY < topPos + 28) {
             if (scanButton.active) {
-                WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.SCAN, 0, List.of());
+                WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.SCAN, List.of());
                 playButtonClick();
             }
             return true;
@@ -363,7 +358,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         if (mouseY >= topPos + 270 && mouseY < topPos + 290) {
             if (mouseX >= leftPos + 28 && mouseX < leftPos + 156) {
                 if (connectButton.active) {
-                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.CONNECT_SELECTED, 0,
+                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.CONNECT_SELECTED,
                             selectedTargets);
                     playButtonClick();
                 }
@@ -371,7 +366,7 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
             }
             if (mouseX >= leftPos + 160 && mouseX < leftPos + 302) {
                 if (disconnectButton.active) {
-                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.DISCONNECT_SELECTED, 0,
+                    WirelessEuNetwork.sendAction(menu.getPos(), WirelessEuNetwork.ServerAction.DISCONNECT_SELECTED,
                             selectedTargets);
                     playButtonClick();
                 }
@@ -488,10 +483,12 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         String buffer = WirelessEuBroadcasterMachine.formatCompactEu(state.storedEu()) + " / "
                 + WirelessEuBroadcasterMachine.formatCompactEu(state.capacityEu());
         graphics.drawString(font, font.plainSubstrByWidth(buffer, 101), x, y + 13, 0xFF202020, false);
-        drawBar(graphics, x, y + 27, 101, 7, state.capacityEu() <= 0 ? 0.0D
-                : (double) state.storedEu() / (double) state.capacityEu(), 0xFF5A9E7A);
+        double ratio = state.capacityEu().signum() <= 0 ? 0.0D
+                : state.storedEu().doubleValue() / state.capacityEu().doubleValue();
+        drawBar(graphics, x, y + 27, 101, 7, ratio, 0xFF5A9E7A);
         graphics.drawString(font, Component.translatable("gui.wireless_eu.input"), x, y + 45, 0xFF3C3C3C, false);
-        long inputEuPerTick = toEuPerTick(state.inputEuPerSecond());
+        java.math.BigInteger inputEuPerTick = state.inputEuPerSecond()
+                .divide(java.math.BigInteger.valueOf(20L));
         String input = WirelessEuBroadcasterMachine.formatCompactEu(inputEuPerTick) + " EU/t  "
                 + WirelessEuBroadcasterMachine.formatInputEquivalent(inputEuPerTick);
         graphics.drawString(font, font.plainSubstrByWidth(input, 101), x, y + 58, 0xFF202020, false);
@@ -506,7 +503,8 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
                 0xFF3C3C3C, false);
         String load = WirelessEuBroadcasterMachine.formatAmperageLoad(state.connectedLoadEuPerTick(),
                         state.voltage()) + " "
-                + Component.translatable("gui.wireless_eu.used_of").getString() + " " + state.outputAmperage() + "A";
+                + Component.translatable("gui.wireless_eu.used_of").getString() + " "
+                + Component.translatable("gui.wireless_eu.unlimited").getString();
         graphics.drawString(font, font.plainSubstrByWidth(load, 101), x, y + 151, 0xFF202020, false);
         graphics.drawString(font, state.canConfigure()
                 ? Component.translatable("gui.wireless_eu.owner")
@@ -517,16 +515,14 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
     @Override
     protected void containerTick() {
         super.containerTick();
-        WirelessEuNetwork.ConnectionRejection rejection = ClientBroadcasterState.takeConnectionRejection(menu.getPos());
+        WirelessEuNetwork.ConnectionRejection rejection = ClientBroadcasterState.takeConnectionRejection(
+                currentDimension(), menu.getPos());
         if (rejection != null) {
             rejectionMessage = switch (rejection) {
-                case OUTPUT_FULL -> Component.translatable("gui.wireless_eu.connection_rejected_full");
                 case BROADCASTER_LIMIT -> Component.translatable("gui.wireless_eu.connection_rejected_broadcaster_limit");
                 case MIGRATION_WIRELESS_UPGRADE_REQUIRED ->
                         Component.translatable("gui.wireless_eu.migration_wireless_upgrade_required");
-                default -> Component.translatable("gui.wireless_eu.connection_rejected_increase");
             };
-            dismissalButton.visible = false;
             clearDetailTooltip();
         }
     }
@@ -554,7 +550,6 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
 
     private void dismissRejection() {
         rejectionMessage = null;
-        dismissalButton.visible = false;
         playButtonClick();
     }
 
@@ -568,12 +563,13 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         } else if (target != null && frozenDetailTooltip == null
                 && now - detailHoverStartMillis >= DETAIL_TOOLTIP_DELAY_MILLIS) {
             ClientBroadcasterState.State state = state();
+            java.math.BigInteger inputPerTick = state.inputEuPerSecond()
+                    .divide(java.math.BigInteger.valueOf(20L));
             frozenDetailTooltip = target == DetailTarget.BUFFER
                     ? Component.literal(WirelessEuBroadcasterMachine.formatEu(state.storedEu()) + " / "
                     + WirelessEuBroadcasterMachine.formatEu(state.capacityEu()) + " EU")
-                    : Component.literal(WirelessEuBroadcasterMachine.formatEu(toEuPerTick(state.inputEuPerSecond()))
-                    + " EU/t (" + WirelessEuBroadcasterMachine.formatInputEquivalent(
-                    toEuPerTick(state.inputEuPerSecond())) + ")");
+                    : Component.literal(WirelessEuBroadcasterMachine.formatEu(inputPerTick)
+                    + " EU/t (" + WirelessEuBroadcasterMachine.formatInputEquivalent(inputPerTick) + ")");
         }
         if (frozenDetailTooltip != null) {
             graphics.renderTooltip(font, frozenDetailTooltip, mouseX, mouseY);
@@ -623,10 +619,6 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
 
     private double toBaseY(double value) {
         return topPos + (value - topPos) / uiScale;
-    }
-
-    private static long toEuPerTick(long euPerSecond) {
-        return euPerSecond / 20L;
     }
 
     private static String shortKind(ClientBroadcasterState.TargetView target) {
@@ -684,13 +676,20 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
             boolean connected = state.isConnected(view.reference());
             if (included.add(view.reference()) && connected == (targetFilter == TargetFilter.CONNECTED)
                     && matches(view, query)) {
-                rows.add(new DisplayRow(view, false, connected));
+                rows.add(new DisplayRow(view, connected));
+            }
+        }
+        // Connections are shown even when the player has not scanned this session.
+        for (WirelessTarget target : state.connections()) {
+            ClientBroadcasterState.TargetView view = ClientBroadcasterState.TargetView.local(state.dimension(), target);
+            if (targetFilter == TargetFilter.CONNECTED && included.add(view.reference()) && matches(view, query)) {
+                rows.add(new DisplayRow(view, true));
             }
         }
         for (var remote : state.remoteConnections()) {
             ClientBroadcasterState.TargetView view = ClientBroadcasterState.TargetView.remote(remote);
             if (included.add(view.reference()) && targetFilter == TargetFilter.CONNECTED && matches(view, query)) {
-                rows.add(new DisplayRow(view, false, true));
+                rows.add(new DisplayRow(view, true));
             }
         }
         return rows;
@@ -707,7 +706,13 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
     }
 
     private ClientBroadcasterState.State state() {
-        return ClientBroadcasterState.get(menu.getPos());
+        return ClientBroadcasterState.get(currentDimension(), menu.getPos());
+    }
+
+    private ResourceLocation currentDimension() {
+        return Minecraft.getInstance().level == null
+                ? ResourceLocation.fromNamespaceAndPath("minecraft", "overworld")
+                : Minecraft.getInstance().level.dimension().location();
     }
 
     private enum DetailTarget {
@@ -720,6 +725,6 @@ public final class WirelessBroadcasterScreen extends AbstractContainerScreen<Wir
         CONNECTED
     }
 
-    private record DisplayRow(ClientBroadcasterState.TargetView target, boolean sectionHeader, boolean connected) {
+    private record DisplayRow(ClientBroadcasterState.TargetView target, boolean connected) {
     }
 }

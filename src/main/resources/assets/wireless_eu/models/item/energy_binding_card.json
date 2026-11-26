@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "wireless_eu:item/energy_binding_card"
+  }
+}
