@@ -459,14 +459,14 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
     }
 
     public void handleAction(ServerPlayer player, WirelessEuNetwork.ServerAction action,
-                             int requestedAmperage, Collection<Long> selectedPositions) {
+                             int requestedAmperage, Collection<WirelessEuNetwork.TargetReference> selectedTargets) {
         if (action == WirelessEuNetwork.ServerAction.LOCATE_TARGET) {
-            sendTargetLocation(player, selectedPositions);
+            sendTargetLocation(player, selectedTargets);
             sendStateTo(player);
             return;
         }
         if (action == WirelessEuNetwork.ServerAction.LOCATE_BROADCASTER) {
-            sendHigherBroadcasterLocation(player, selectedPositions);
+            sendHigherBroadcasterLocation(player, selectedTargets);
             sendStateTo(player);
             return;
         }
@@ -477,26 +477,26 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
 
         switch (action) {
             case SCAN -> scanTargets();
-            case MIGRATE_TO_HIGHER -> migrateToHigherBroadcaster(player, selectedPositions);
+            case MIGRATE_TO_HIGHER -> migrateToHigherBroadcaster(player, selectedTargets);
             case SET_OUTPUT_AMPERAGE -> {
                 configuredOutputAmperage = DEFAULT_OUTPUT_AMPERAGE;
             }
             case CONNECT_SELECTED -> {
-                if (!selectedPositions.isEmpty()) {
+                if (!selectedTargets.isEmpty()) {
                     BlockPos conflictingBroadcaster = findConflictingBroadcaster();
                     if (conflictingBroadcaster != null) {
                         WirelessEuNetwork.sendConnectionRejected(player, getPos(),
                                 WirelessEuNetwork.ConnectionRejection.BROADCASTER_LIMIT);
                         sendConflictingBroadcasterMessage(player, conflictingBroadcaster);
                     } else {
-                        WirelessEuNetwork.ConnectionRejection rejection = connectTargets(selectedPositions);
+                        WirelessEuNetwork.ConnectionRejection rejection = connectTargets(selectedTargets);
                         if (rejection != null) {
                             WirelessEuNetwork.sendConnectionRejected(player, getPos(), rejection);
                         }
                     }
                 }
             }
-            case DISCONNECT_SELECTED -> disconnectTargets(selectedPositions);
+            case DISCONNECT_SELECTED -> disconnectTargets(selectedTargets);
         }
         sendStateTo(player);
     }
@@ -570,6 +570,10 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         return List.copyOf(connections.values());
     }
 
+    public List<WirelessRemoteTarget> getRemoteConnections() {
+        return List.copyOf(remoteConnections.values());
+    }
+
     public List<WirelessEuNetwork.HigherBroadcasterInfo> getHigherBroadcasters() {
         return findHigherBroadcasters().stream()
                 .map(machine -> new WirelessEuNetwork.HigherBroadcasterInfo(machine.getPos(), machine.getTier(),
@@ -577,22 +581,27 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
                 .toList();
     }
 
-    private void migrateToHigherBroadcaster(ServerPlayer player, Collection<Long> selectedPositions) {
-        WirelessEuBroadcasterMachine destination = selectedPositions.isEmpty() ? null
-                : findHigherBroadcasters().stream().filter(machine -> machine.getPos().asLong() == selectedPositions.iterator().next())
+    private void migrateToHigherBroadcaster(ServerPlayer player,
+                                             Collection<WirelessEuNetwork.TargetReference> selectedTargets) {
+        WirelessEuNetwork.TargetReference selected = selectedTargets.isEmpty() ? null
+                : selectedTargets.iterator().next();
+        WirelessEuBroadcasterMachine destination = selected == null || getLevel() == null
+                || !getLevel().dimension().location().equals(selected.dimension()) ? null
+                : findHigherBroadcasters().stream().filter(machine -> machine.getPos().equals(selected.pos()))
                 .findFirst().orElse(null);
         if (destination == null) {
             player.sendSystemMessage(Component.translatable("chat.wireless_eu.migration_not_found"));
+            return;
+        }
+        if (crossDimensionUnlocked && !destination.crossDimensionUnlocked) {
+            WirelessEuNetwork.sendConnectionRejected(player, getPos(),
+                    WirelessEuNetwork.ConnectionRejection.MIGRATION_WIRELESS_UPGRADE_REQUIRED);
             return;
         }
         long stored = energyContainer.getEnergyStored();
         long free = destination.energyContainer.getEnergyCapacity() - destination.energyContainer.getEnergyStored();
         if (stored > free) {
             player.sendSystemMessage(Component.translatable("chat.wireless_eu.migration_capacity"));
-            return;
-        }
-        if (!remoteConnections.isEmpty() && !destination.crossDimensionUnlocked) {
-            player.sendSystemMessage(Component.translatable("chat.wireless_eu.migration_remote_upgrade"));
             return;
         }
         destination.connections.putAll(connections);
@@ -831,8 +840,9 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         scanResults = List.copyOf(found);
     }
 
-    private WirelessEuNetwork.ConnectionRejection connectTargets(Collection<Long> selectedPositions) {
-        if (selectedPositions.isEmpty()) {
+    private WirelessEuNetwork.ConnectionRejection connectTargets(
+            Collection<WirelessEuNetwork.TargetReference> selectedTargets) {
+        if (selectedTargets.isEmpty() || getLevel() == null) {
             return null;
         }
 
@@ -840,7 +850,9 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         for (WirelessTarget target : scanResults) {
             long position = target.pos().asLong();
             WirelessTarget refreshedTarget = createTarget(target.pos());
-            if (selectedPositions.contains(position) && !connections.containsKey(position) && refreshedTarget != null) {
+            WirelessEuNetwork.TargetReference reference = new WirelessEuNetwork.TargetReference(
+                    getLevel().dimension().location(), target.pos());
+            if (selectedTargets.contains(reference) && !connections.containsKey(position) && refreshedTarget != null) {
                 newConnections.add(refreshedTarget);
             }
         }
@@ -914,35 +926,38 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         player.sendSystemMessage(Component.literal("冲突范围内的广播器位置：").append(location));
     }
 
-    private void sendTargetLocation(ServerPlayer player, Collection<Long> positions) {
-        for (long rawPosition : positions) {
-            BlockPos position = BlockPos.of(rawPosition);
-            if (!isInRange(position) || !isLoaded(position)) {
+    private void sendTargetLocation(ServerPlayer player,
+                                    Collection<WirelessEuNetwork.TargetReference> targets) {
+        for (WirelessEuNetwork.TargetReference reference : targets) {
+            ServerLevel targetLevel = getServerLevel(player, reference.dimension());
+            BlockPos position = reference.pos();
+            if (targetLevel == null || !targetLevel.hasChunkAt(position)) {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.target_unavailable"));
                 continue;
             }
-            boolean known = connections.containsKey(rawPosition)
-                    || scanResults.stream().anyMatch(target -> target.pos().equals(position));
-            if (!known || createTarget(position) == null) {
+            if (!isKnownTarget(reference) || createTarget(targetLevel, position, false) == null) {
+                player.sendSystemMessage(Component.translatable("chat.wireless_eu.target_not_found"));
                 continue;
             }
             Component location = Component.literal("[" + position.getX() + ", " + position.getY() + ", "
                             + position.getZ() + "]")
                     .withStyle(style -> style.withColor(ChatFormatting.AQUA)
                             .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                    WirelessEuCommands.teleportTargetCommand(position)))
+                                    WirelessEuCommands.teleportTargetCommand(reference.dimension(), position)))
                             .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
                                     Component.translatable("chat.wireless_eu.target_location_hover"))));
             player.sendSystemMessage(Component.translatable("chat.wireless_eu.target_location").append(location));
         }
     }
 
-    private void sendHigherBroadcasterLocation(ServerPlayer player, Collection<Long> positions) {
-        if (positions.isEmpty()) {
+    private void sendHigherBroadcasterLocation(ServerPlayer player,
+                                               Collection<WirelessEuNetwork.TargetReference> targets) {
+        if (targets.isEmpty()) {
             return;
         }
-        long requestedPosition = positions.iterator().next();
+        WirelessEuNetwork.TargetReference requested = targets.iterator().next();
         WirelessEuBroadcasterMachine target = findHigherBroadcasters().stream()
-                .filter(machine -> machine.getPos().asLong() == requestedPosition)
+                .filter(machine -> machine.getPos().equals(requested.pos()))
                 .findFirst().orElse(null);
         if (target == null) {
             return;
@@ -958,10 +973,27 @@ public final class WirelessEuBroadcasterMachine extends TieredEnergyMachine impl
         player.sendSystemMessage(Component.translatable("chat.wireless_eu.broadcaster_location").append(location));
     }
 
-    private void disconnectTargets(Collection<Long> selectedPositions) {
+    private boolean isKnownTarget(WirelessEuNetwork.TargetReference reference) {
+        if (getLevel() == null) {
+            return false;
+        }
+        if (getLevel().dimension().location().equals(reference.dimension())) {
+            long rawPosition = reference.pos().asLong();
+            return connections.containsKey(rawPosition)
+                    || remoteConnections.containsKey(new RemoteTargetKey(reference.dimension(), rawPosition))
+                    || scanResults.stream().anyMatch(target -> target.pos().equals(reference.pos()));
+        }
+        return remoteConnections.containsKey(new RemoteTargetKey(reference.dimension(), reference.pos().asLong()));
+    }
+
+    private void disconnectTargets(Collection<WirelessEuNetwork.TargetReference> selectedTargets) {
         boolean changed = false;
-        for (long selectedPosition : selectedPositions) {
-            changed |= connections.remove(selectedPosition) != null;
+        ResourceLocation currentDimension = getLevel() == null ? null : getLevel().dimension().location();
+        for (WirelessEuNetwork.TargetReference target : selectedTargets) {
+            if (currentDimension != null && currentDimension.equals(target.dimension())) {
+                changed |= connections.remove(target.pos().asLong()) != null;
+            }
+            changed |= remoteConnections.remove(new RemoteTargetKey(target.dimension(), target.pos().asLong())) != null;
         }
         if (changed) {
             markDirty();

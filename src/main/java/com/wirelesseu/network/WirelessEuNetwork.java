@@ -3,6 +3,7 @@ package com.wirelesseu.network;
 import com.wirelesseu.WirelessEuMod;
 import com.wirelesseu.machine.TargetKind;
 import com.wirelesseu.machine.WirelessEuBroadcasterMachine;
+import com.wirelesseu.machine.WirelessRemoteTarget;
 import com.wirelesseu.machine.WirelessTarget;
 import com.wirelesseu.menu.WirelessBroadcasterMenu;
 import net.minecraft.core.BlockPos;
@@ -23,7 +24,8 @@ import java.util.function.Supplier;
 
 public final class WirelessEuNetwork {
     public record HigherBroadcasterInfo(BlockPos pos, int tier, long distanceSquared) {}
-    private static final String PROTOCOL_VERSION = "7";
+    public record TargetReference(ResourceLocation dimension, BlockPos pos) {}
+    private static final String PROTOCOL_VERSION = "9";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(WirelessEuMod.MOD_ID, "main"),
             () -> PROTOCOL_VERSION,
@@ -44,12 +46,13 @@ public final class WirelessEuNetwork {
     }
 
     public static void sendAction(BlockPos pos, ServerAction action, int requestedAmperage,
-                                  Collection<Long> selectedPositions) {
-        CHANNEL.sendToServer(new ActionPacket(pos, action, requestedAmperage, List.copyOf(selectedPositions)));
+                                  Collection<TargetReference> selectedTargets) {
+        CHANNEL.sendToServer(new ActionPacket(pos, action, requestedAmperage, List.copyOf(selectedTargets)));
     }
 
     public static void sendState(ServerPlayer player, WirelessEuBroadcasterMachine broadcaster) {
         StatePacket packet = new StatePacket(
+                broadcaster.getLevel().dimension().location(),
                 broadcaster.getPos(),
                 broadcaster.isOwner(player),
                 broadcaster.getConfiguredOutputAmperage(),
@@ -62,6 +65,7 @@ public final class WirelessEuNetwork {
                 broadcaster.getConnectedLoadEuPerTick(),
                 broadcaster.getScanResults(),
                 broadcaster.getConnections(),
+                broadcaster.getRemoteConnections(),
                 broadcaster.getHigherBroadcasters());
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
     }
@@ -83,18 +87,20 @@ public final class WirelessEuNetwork {
     public enum ConnectionRejection {
         INCREASE_OUTPUT_LIMIT,
         OUTPUT_FULL,
-        BROADCASTER_LIMIT
+        BROADCASTER_LIMIT,
+        MIGRATION_WIRELESS_UPGRADE_REQUIRED
     }
 
     private record ActionPacket(BlockPos pos, ServerAction action, int requestedAmperage,
-                                List<Long> selectedPositions) {
+                                List<TargetReference> selectedTargets) {
         private static void encode(ActionPacket packet, FriendlyByteBuf buffer) {
             buffer.writeBlockPos(packet.pos);
             buffer.writeVarInt(packet.action.ordinal());
             buffer.writeVarInt(packet.requestedAmperage);
-            buffer.writeVarInt(packet.selectedPositions.size());
-            for (long selectedPosition : packet.selectedPositions) {
-                buffer.writeLong(selectedPosition);
+            buffer.writeVarInt(packet.selectedTargets.size());
+            for (TargetReference target : packet.selectedTargets) {
+                buffer.writeResourceLocation(target.dimension());
+                buffer.writeBlockPos(target.pos());
             }
         }
 
@@ -104,11 +110,11 @@ public final class WirelessEuNetwork {
             ServerAction action = ServerAction.values()[Math.max(0, Math.min(ServerAction.values().length - 1, ordinal))];
             int requestedAmperage = buffer.readVarInt();
             int count = Math.min(4096, buffer.readVarInt());
-            List<Long> selectedPositions = new ArrayList<>(count);
+            List<TargetReference> selectedTargets = new ArrayList<>(count);
             for (int index = 0; index < count; index++) {
-                selectedPositions.add(buffer.readLong());
+                selectedTargets.add(new TargetReference(buffer.readResourceLocation(), buffer.readBlockPos()));
             }
-            return new ActionPacket(pos, action, requestedAmperage, selectedPositions);
+            return new ActionPacket(pos, action, requestedAmperage, selectedTargets);
         }
 
         private static void handle(ActionPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -121,19 +127,22 @@ public final class WirelessEuNetwork {
                 }
                 WirelessEuBroadcasterMachine machine = menu.getMachine();
                 if (machine != null) {
-                    machine.handleAction(player, packet.action, packet.requestedAmperage, packet.selectedPositions);
+                    machine.handleAction(player, packet.action, packet.requestedAmperage, packet.selectedTargets);
                 }
             });
             context.setPacketHandled(true);
         }
     }
 
-    private record StatePacket(BlockPos pos, boolean canConfigure, int outputAmperage, long storedEu, long capacityEu,
+    private record StatePacket(ResourceLocation dimension, BlockPos pos, boolean canConfigure, int outputAmperage,
+                               long storedEu, long capacityEu,
                                long voltage, long inputEuPerSecond, long fillTimeSeconds, long depletionTimeSeconds,
                                long connectedLoadEuPerTick,
                                List<WirelessTarget> scanResults, List<WirelessTarget> connections,
+                               List<WirelessRemoteTarget> remoteConnections,
                                List<HigherBroadcasterInfo> higherBroadcasters) {
         private static void encode(StatePacket packet, FriendlyByteBuf buffer) {
+            buffer.writeResourceLocation(packet.dimension);
             buffer.writeBlockPos(packet.pos);
             buffer.writeBoolean(packet.canConfigure);
             buffer.writeVarInt(packet.outputAmperage);
@@ -146,6 +155,7 @@ public final class WirelessEuNetwork {
             buffer.writeLong(packet.connectedLoadEuPerTick);
             writeTargets(buffer, packet.scanResults);
             writeTargets(buffer, packet.connections);
+            writeRemoteTargets(buffer, packet.remoteConnections);
             buffer.writeVarInt(packet.higherBroadcasters.size());
             for (HigherBroadcasterInfo info : packet.higherBroadcasters) {
                 buffer.writeBlockPos(info.pos());
@@ -155,6 +165,7 @@ public final class WirelessEuNetwork {
         }
 
         private static StatePacket decode(FriendlyByteBuf buffer) {
+            ResourceLocation dimension = buffer.readResourceLocation();
             BlockPos pos = buffer.readBlockPos();
             boolean canConfigure = buffer.readBoolean();
             int outputAmperage = buffer.readVarInt();
@@ -165,23 +176,28 @@ public final class WirelessEuNetwork {
             long fillTimeSeconds = buffer.readLong();
             long depletionTimeSeconds = buffer.readLong();
             long connectedLoadEuPerTick = buffer.readLong();
-            return new StatePacket(pos, canConfigure, outputAmperage, storedEu, capacityEu, voltage, inputEuPerSecond,
-                    fillTimeSeconds, depletionTimeSeconds, connectedLoadEuPerTick, readTargets(buffer), readTargets(buffer),
-                    readHigherBroadcasters(buffer));
+            return new StatePacket(dimension, pos, canConfigure, outputAmperage, storedEu, capacityEu, voltage,
+                    inputEuPerSecond, fillTimeSeconds, depletionTimeSeconds, connectedLoadEuPerTick,
+                    readTargets(buffer), readTargets(buffer), readRemoteTargets(buffer), readHigherBroadcasters(buffer));
         }
 
         private static void handle(StatePacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
             NetworkEvent.Context context = contextSupplier.get();
             context.enqueueWork(() -> {
-                Set<Long> connectedPositions = new HashSet<>();
+                Set<TargetReference> connectedTargets = new HashSet<>();
                 for (WirelessTarget target : packet.connections) {
-                    connectedPositions.add(target.pos().asLong());
+                    connectedTargets.add(new TargetReference(packet.dimension, target.pos()));
                 }
-                ClientBroadcasterState.put(new ClientBroadcasterState.State(packet.pos, packet.canConfigure,
+                for (WirelessRemoteTarget target : packet.remoteConnections) {
+                    connectedTargets.add(new TargetReference(target.dimension(), target.pos()));
+                }
+                ClientBroadcasterState.put(new ClientBroadcasterState.State(packet.dimension, packet.pos,
+                        packet.canConfigure,
                         packet.outputAmperage, packet.storedEu, packet.capacityEu, packet.voltage, packet.inputEuPerSecond,
                         packet.fillTimeSeconds, packet.depletionTimeSeconds, packet.connectedLoadEuPerTick,
                         List.copyOf(packet.scanResults),
-                        Set.copyOf(connectedPositions), List.copyOf(packet.higherBroadcasters)));
+                        List.copyOf(packet.remoteConnections), Set.copyOf(connectedTargets),
+                        List.copyOf(packet.higherBroadcasters)));
             });
             context.setPacketHandled(true);
         }
@@ -219,6 +235,36 @@ public final class WirelessEuNetwork {
                 long voltage = Math.max(1L, buffer.readLong());
                 long amperage = Math.max(1L, buffer.readLong());
                 targets.add(new WirelessTarget(pos, name, kind, tier, voltage, amperage));
+            }
+            return targets;
+        }
+
+        private static void writeRemoteTargets(FriendlyByteBuf buffer, List<WirelessRemoteTarget> targets) {
+            buffer.writeVarInt(targets.size());
+            for (WirelessRemoteTarget target : targets) {
+                buffer.writeResourceLocation(target.dimension());
+                buffer.writeBlockPos(target.pos());
+                buffer.writeUtf(target.name(), 256);
+                buffer.writeVarInt(target.kind().ordinal());
+                buffer.writeVarInt(target.tier());
+                buffer.writeLong(target.voltage());
+                buffer.writeLong(target.amperage());
+            }
+        }
+
+        private static List<WirelessRemoteTarget> readRemoteTargets(FriendlyByteBuf buffer) {
+            int count = Math.min(4096, buffer.readVarInt());
+            List<WirelessRemoteTarget> targets = new ArrayList<>(count);
+            for (int index = 0; index < count; index++) {
+                ResourceLocation dimension = buffer.readResourceLocation();
+                BlockPos pos = buffer.readBlockPos();
+                String name = buffer.readUtf(256);
+                int kindOrdinal = buffer.readVarInt();
+                TargetKind kind = TargetKind.values()[Math.max(0, Math.min(TargetKind.values().length - 1, kindOrdinal))];
+                int tier = Math.max(0, buffer.readVarInt());
+                long voltage = Math.max(1L, buffer.readLong());
+                long amperage = Math.max(1L, buffer.readLong());
+                targets.add(new WirelessRemoteTarget(dimension, pos, name, kind, tier, voltage, amperage));
             }
             return targets;
         }

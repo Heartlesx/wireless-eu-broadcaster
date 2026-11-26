@@ -9,9 +9,14 @@ import com.wirelesseu.machine.WirelessEuBroadcasterMachine;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -29,16 +34,18 @@ public final class WirelessEuCommands {
                         .then(Commands.argument("position", BlockPosArgument.blockPos())
                                 .executes(WirelessEuCommands::teleportToBroadcaster)))
                 .then(Commands.literal("goto_target")
-                        .then(Commands.argument("position", BlockPosArgument.blockPos())
-                                .executes(WirelessEuCommands::teleportToTarget))));
+                        .then(Commands.argument("dimension", ResourceLocationArgument.id())
+                                .then(Commands.argument("position", BlockPosArgument.blockPos())
+                                        .executes(WirelessEuCommands::teleportToTarget)))));
     }
 
     public static String teleportCommand(BlockPos position) {
         return "/wireless_eu goto_broadcaster " + position.getX() + " " + position.getY() + " " + position.getZ();
     }
 
-    public static String teleportTargetCommand(BlockPos position) {
-        return "/wireless_eu goto_target " + position.getX() + " " + position.getY() + " " + position.getZ();
+    public static String teleportTargetCommand(ResourceLocation dimension, BlockPos position) {
+        return "/wireless_eu goto_target " + dimension + " " + position.getX() + " " + position.getY() + " "
+                + position.getZ();
     }
 
     private static int teleportToBroadcaster(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -57,14 +64,20 @@ public final class WirelessEuCommands {
 
     private static int teleportToTarget(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         ServerPlayer player = context.getSource().getPlayerOrException();
-        BlockPos position = BlockPosArgument.getLoadedBlockPos(context, "position");
-        MetaMachine machine = MetaMachine.getMachine(player.serverLevel(), position);
+        ResourceLocation dimension = ResourceLocationArgument.getId(context, "dimension");
+        ServerLevel targetLevel = player.getServer().getLevel(ResourceKey.create(Registries.DIMENSION, dimension));
+        BlockPos position = BlockPosArgument.getBlockPos(context, "position");
+        if (targetLevel == null || !targetLevel.hasChunkAt(position)) {
+            context.getSource().sendFailure(Component.translatable("chat.wireless_eu.target_unavailable"));
+            return 0;
+        }
+        MetaMachine machine = MetaMachine.getMachine(targetLevel, position);
         if (machine == null || machine instanceof WirelessEuBroadcasterMachine) {
             context.getSource().sendFailure(Component.translatable("chat.wireless_eu.target_not_found"));
             return 0;
         }
 
-        player.teleportTo(player.serverLevel(), position.getX() + 0.5D, position.getY() + 1.0D,
+        player.teleportTo(targetLevel, position.getX() + 0.5D, position.getY() + 1.0D,
                 position.getZ() + 0.5D, player.getYRot(), player.getXRot());
         return 1;
     }

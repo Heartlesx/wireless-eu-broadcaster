@@ -37,11 +37,13 @@
   "gui.wireless_eu.migrate": "迁移到高等级广播器",
   "gui.wireless_eu.migration_targets": "选择迁移目标",
   "gui.wireless_eu.migration_confirm": "是否确认迁移？",
+  "gui.wireless_eu.migration_wireless_upgrade_required": "迁移失败：目标广播器需要无线跨维度升级",
   "gui.wireless_eu.confirm": "确认",
   "gui.wireless_eu.cancel": "取消",
   "chat.wireless_eu.target_location": "目标位置：",
   "chat.wireless_eu.target_location_hover": "点击传送到该机器",
   "chat.wireless_eu.target_not_found": "该位置没有有效的机器",
+  "chat.wireless_eu.target_unavailable": "目标暂不可用：所在维度或区块尚未加载",
   "chat.wireless_eu.migration_not_found": "范围内没有可用的更高等级广播器",
   "chat.wireless_eu.migration_capacity": "目标广播器缓存空间不足，迁移已取消",
   "chat.wireless_eu.migration_success": "已将连接机器和 EU 缓存迁移到更高等级广播器"
@@ -68,5 +70,4 @@
   "chat.wireless_eu.link_commit_empty": "链接卡中没有待提交的目标",
   "chat.wireless_eu.link_commit_capacity": "链接提交取消：这些目标会超过广播器的总输出上限",
   "chat.wireless_eu.link_commit_success": "已将 %s 个目标链接到广播器，链接卡可以继续收集下一批目标"
-  ,"chat.wireless_eu.migration_remote_upgrade": "目标广播器尚未安装 32 个同级电路，无法接收跨维度连接"
 }
